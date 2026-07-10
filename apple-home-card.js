@@ -918,8 +918,8 @@ class AppleHomeCard extends LitElement {
         .content { padding: 11px 12px; gap: 4px; }
         .badge { width: 32px; height: 32px; --mdc-icon-size: 18px; }
         .name {
-          font-size: 13px;
-          line-height: 1.12;
+          font-size: 12px;
+          line-height: 1.14;
           white-space: normal;
           display: -webkit-box;
           -webkit-box-orient: vertical;
@@ -1086,11 +1086,15 @@ class AppleHomeCard extends LitElement {
         line-height: 1.2;
         letter-spacing: -0.01em;
         color: var(--aha-text);
-        overflow-wrap: anywhere;
+        white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
+        overflow: hidden;
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
-        overflow: hidden;
+        text-wrap: balance;
       }
 
       .state {
@@ -1102,9 +1106,14 @@ class AppleHomeCard extends LitElement {
         font-size: 13px;
         font-weight: 500;
         color: var(--aha-subtext);
-        white-space: nowrap;
+        white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
         overflow: hidden;
-        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
       }
 
       /* When on, text sits on the colored fill — make it legible. */
@@ -2372,10 +2381,14 @@ class AppleHomeAreaCard extends LitElement {
         font-weight: 600; font-size: 15px; letter-spacing: -0.01em;
         color: var(--primary-text-color);
         white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
         overflow: hidden;
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
+        text-wrap: balance;
       }
       .sub { font-size: 13px; font-weight: 500; color: var(--secondary-text-color); }
       .tile.on .name, .tile.on .sub { color: #1c1c1e; }
@@ -4482,10 +4495,14 @@ class AppleHomeVacuumCard extends LitElement {
         letter-spacing: -0.02em;
         color: var(--primary-text-color);
         white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
         overflow: hidden;
+        text-wrap: balance;
       }
       .state {
         font-family: ${FONT_STACK_CSS};
@@ -4493,6 +4510,9 @@ class AppleHomeVacuumCard extends LitElement {
         font-weight: 500;
         color: var(--secondary-text-color);
         white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
@@ -4849,10 +4869,14 @@ class AppleHomeFanCard extends LitElement {
         letter-spacing: -0.02em;
         color: var(--primary-text-color);
         white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
         overflow: hidden;
+        text-wrap: balance;
       }
       .state {
         font-family: ${FONT_STACK_CSS};
@@ -4860,6 +4884,9 @@ class AppleHomeFanCard extends LitElement {
         font-weight: 500;
         color: var(--secondary-text-color);
         white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
         overflow: hidden;
         text-overflow: ellipsis;
       }
@@ -5763,10 +5790,14 @@ class AppleHomeChip extends LitElement {
         line-height: 1.15;
         color: var(--primary-text-color);
         white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
         overflow: hidden;
+        text-wrap: balance;
       }
       .value {
         margin-left: auto;
@@ -6517,8 +6548,8 @@ class AppleHomeGroup extends LitElement {
       :host { display: block; height: 100%; container-type: inline-size; container-name: ahatile; }
       ha-card { background: transparent; border: none; box-shadow: none; height: 100%; }
       .tile {
-        position: relative; height: 100%; min-height: 84px; box-sizing: border-box;
-        border-radius: 22px; padding: 14px 16px; cursor: pointer;
+        position: relative; height: 100%; min-height: 92px; box-sizing: border-box;
+        border-radius: 22px; padding: 15px 17px; cursor: pointer;
         display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
         background: var(--aha-tile-background, rgba(120,120,128,0.16));
         backdrop-filter: blur(20px) saturate(180%);
@@ -6536,17 +6567,32 @@ class AppleHomeGroup extends LitElement {
       .name {
         font-weight: 600; font-size: 15px; letter-spacing: -0.01em; color: var(--primary-text-color);
         white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        text-wrap: balance;
+      }
+      .sub {
+        font-size: 13px; font-weight: 500; color: var(--secondary-text-color);
+        white-space: normal;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
         overflow: hidden;
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
       }
-      .sub { font-size: 13px; font-weight: 500; color: var(--secondary-text-color); }
       .chev { position: absolute; top: 14px; right: 12px; color: var(--secondary-text-color); --mdc-icon-size: 20px; }
       @container ahatile (max-width: 132px) {
+        .tile { min-height: 88px; padding: 13px 14px; gap: 8px; }
         .name {
-          font-size: 13px;
-          line-height: 1.12;
+          font-size: 12px;
+          line-height: 1.14;
           white-space: normal;
           display: -webkit-box;
           -webkit-box-orient: vertical;
