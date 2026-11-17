@@ -16,7 +16,7 @@ A frosted-glass tile card for [Home Assistant](https://www.home-assistant.io/). 
 - ✨ **Subtle motion** — spring press, a gentle badge "pop" and icon spin on state change, scene pulses — all quiet, all respecting `prefers-reduced-motion`.
 - 🌌 **Geometric/glass backgrounds** — a full-dashboard backdrop with six presets (aurora, sunset, ocean, midnight, mesh, mono) and an inline selector.
 - 📲 **Swipe pager** — iPhone-style swipeable pages, one room per page, with page dots.
-- 👆 **Native interactions** — tap toggles, hold opens the detail sheet, double-tap configurable; haptics on supported devices; scenes/scripts pulse on activation.
+- 👆 **Native interactions** — tap toggles, hold opens the detail sheet, taps respond instantly (double-tap is optional); haptics on supported devices; scenes/scripts pulse on activation.
 - 🎛️ **GUI editor** — full visual config in the dashboard editor, no YAML required.
 - 🌗 **Light & dark** — ships with a companion theme tuned for both.
 - 🧩 **Broad domain support** — light, switch, fan, cover, lock, climate, media_player, sensor, binary_sensor, person, and more.
@@ -185,7 +185,7 @@ it with the companion theme for the cleanest result. Both the backdrop drift and
 | `slider_direction`  | string | `up`                     | Lights only: `up` fills from the bottom (drag up = brighter); `down` fills from the top (drag down = brighter). |
 | `tap_action`        | object | `{action: toggle}`       | Standard HA action object.                                     |
 | `hold_action`       | object | `{action: controls}`     | Standard HA action object. `controls` opens the detail sheet.  |
-| `double_tap_action` | object | `{action: controls}`     | Standard HA action object. `controls` opens the detail sheet.  |
+| `double_tap_action` | object | `{action: none}`         | Standard HA action object. Off by default so taps respond instantly; setting it adds a 250ms wait to every tap. |
 
 ### Sizing
 

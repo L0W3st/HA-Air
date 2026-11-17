@@ -503,7 +503,9 @@ class AppleHomeCard extends LitElement {
     this._config = {
       tap_action: { action: "toggle" },
       hold_action: { action: "controls" },
-      double_tap_action: { action: "controls" },
+      // Off by default: waiting to see whether a second tap follows delays
+      // every single tap by 250ms. Hold already opens the controls.
+      double_tap_action: { action: "none" },
       ...config,
     };
   }
@@ -820,6 +822,13 @@ class AppleHomeCard extends LitElement {
       return;
     }
     if (this._holdFired) { return; }
+    // No double-tap configured: act on the tap right away instead of waiting
+    // 250ms to see whether a second tap follows.
+    const dbl = this._config.double_tap_action;
+    if (!dbl || dbl.action === "none") {
+      this._runAction(this._config.tap_action);
+      return;
+    }
     // Double-tap detection.
     const now = Date.now();
     if (this._lastTap && now - this._lastTap < 250) {
@@ -2282,6 +2291,8 @@ customElements.define("apple-home-climate-card", AppleHomeClimateCard);
 // Area / group tile — summarises a room: "2 of 3 on", taps toggle the group.
 // ===========================================================================
 
+const AREA_TOGGLE_DOMAINS = ["light", "switch", "fan", "input_boolean"];
+
 class AppleHomeAreaCard extends LitElement {
   static get properties() {
     return { hass: {}, _config: { state: true }, _pressed: { state: true } };
@@ -2338,12 +2349,22 @@ class AppleHomeAreaCard extends LitElement {
       .filter(Boolean);
   }
 
+  // The entities a room tap switches: lights, switches, fans and helpers.
+  // Sensors, people and locks in the list only inform, so they're left alone
+  // (and don't count towards "2 of 3 on"). A list with nothing switchable
+  // falls back to counting everything.
+  get _switchable() {
+    const all = this._states;
+    const sw = all.filter((s) => AREA_TOGGLE_DOMAINS.includes(domainOf(s.entity_id)));
+    return sw.length ? sw : all;
+  }
+
   _onCount() {
-    return this._states.filter(isEntityOn).length;
+    return this._switchable.filter(isEntityOn).length;
   }
 
   _summary() {
-    const total = this._states.length;
+    const total = this._switchable.length;
     const on = this._onCount();
     if (total === 0) return "—";
     if (on === 0) return "All off";
@@ -2360,12 +2381,16 @@ class AppleHomeAreaCard extends LitElement {
       return;
     }
     // Toggle the group: if anything is on, turn all off; else turn all on.
+    const targets = this._switchable
+      .filter((s) => AREA_TOGGLE_DOMAINS.includes(domainOf(s.entity_id)))
+      .map((s) => s.entity_id);
+    if (!targets.length) return;
     const anyOn = this._onCount() > 0;
     const haptic = new Event("haptic", { bubbles: true, composed: true });
     haptic.detail = "light";
     this.dispatchEvent(haptic);
     this.hass.callService("homeassistant", anyOn ? "turn_off" : "turn_on", {
-      entity_id: this._config.entities,
+      entity_id: targets,
     });
   }
 
@@ -6743,7 +6768,7 @@ class AppleHomeCardEditor extends LitElement {
       },
       {
         name: "double_tap_action",
-        selector: { ui_action: { default_action: "controls" } },
+        selector: { ui_action: { default_action: "none" } },
       },
     ];
   }
@@ -6784,7 +6809,7 @@ class AppleHomeCardEditor extends LitElement {
 customElements.define("apple-home-card-editor", AppleHomeCardEditor);
 
 // Register in the card picker.
-const DOCS_URL = "https://github.com/captaincooked69/HA-Air";
+const DOCS_URL = "https://github.com/L0W3st/HA-Air";
 window.customCards = window.customCards || [];
 window.customCards.push(
   {
