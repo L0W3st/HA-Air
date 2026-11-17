@@ -390,6 +390,27 @@ const LightField = (() => {
   };
 })();
 
+// Keep a card's glass badge registered with the LightField. Lovelace detaches
+// and re-attaches cards when you switch views, and a re-render can swap the
+// badge element (e.g. "Not found" → real tile), so a one-shot firstUpdated()
+// registration goes stale. Call from connectedCallback() and updated().
+function syncBadge(host, selector = ".badge") {
+  const next =
+    host.isConnected && host.renderRoot
+      ? host.renderRoot.querySelector(selector)
+      : null;
+  if (next === host._badge && (!next || host._badgeLive)) return;
+  if (host._badge && host._badge !== next) LightField.unregister(host._badge);
+  host._badge = next;
+  host._badgeLive = !!next;
+  if (next) LightField.register(next);
+}
+
+function releaseBadge(host) {
+  if (host._badge) LightField.unregister(host._badge);
+  host._badgeLive = false;
+}
+
 // Glass-icon styling shared by every card's badge: a frosted body with a static
 // top sheen plus the LightField specular driven by --sx/--sy/--glow.
 const GLASS_BADGE_CSS = css`
@@ -490,6 +511,7 @@ class AppleHomeCard extends LitElement {
   // Keep an open detail sheet fed with fresh state, reconcile the optimistic
   // flag, and fire a tiny "pop" animation whenever the entity flips on/off.
   updated(changed) {
+    syncBadge(this);
     if (!changed.has("hass")) return;
     if (this._sheet && this.hass) this._sheet.hass = this.hass;
     const s = this._stateObj;
@@ -519,7 +541,7 @@ class AppleHomeCard extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   _openControls() {
@@ -542,9 +564,9 @@ class AppleHomeCard extends LitElement {
     return gridFor(this._config && this._config.size, TILE_SIZES.medium);
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   // --- Helpers -------------------------------------------------------------
@@ -1898,19 +1920,20 @@ class AppleHomeMediaCard extends LitElement {
     return onlyIfEntitiesChanged(this, changed, [this._config.entity], ["_pressed"]);
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   get _stateObj() {
@@ -2124,19 +2147,20 @@ class AppleHomeClimateCard extends LitElement {
     return onlyIfEntitiesChanged(this, changed, [this._config.entity]);
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   get _stateObj() {
@@ -2290,14 +2314,18 @@ class AppleHomeAreaCard extends LitElement {
     return false;
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
+  }
+
+  updated() {
+    syncBadge(this);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   get _states() {
@@ -4273,6 +4301,7 @@ class AppleHomeVacuumCard extends LitElement {
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
     const s = this._stateObj;
     if (!s) return;
@@ -4291,15 +4320,15 @@ class AppleHomeVacuumCard extends LitElement {
     }
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
     window.clearTimeout(this._pendingTimer);
   }
 
@@ -4669,6 +4698,7 @@ class AppleHomeFanCard extends LitElement {
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
     const s = this._stateObj;
     if (!s) return;
@@ -4681,15 +4711,15 @@ class AppleHomeFanCard extends LitElement {
     this._prevOn = on;
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   getCardSize() {
@@ -5099,6 +5129,7 @@ class AppleHomeCoverCard extends LitElement {
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
     const s = this._stateObj;
     if (!s) return;
@@ -5125,15 +5156,15 @@ class AppleHomeCoverCard extends LitElement {
     this._prevMoving = moving;
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet && this._sheet.close) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
     window.clearTimeout(this._holdTimer);
     window.clearTimeout(this._pendingTimer);
     window.clearTimeout(this._popTimer);
@@ -5672,14 +5703,18 @@ class AppleHomeChip extends LitElement {
     return onlyIfEntitiesChanged(this, changed, [this._config.entity], ["_pressed"]);
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".icon-badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this, ".icon-badge");
+  }
+
+  updated() {
+    syncBadge(this, ".icon-badge");
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   getCardSize() {
@@ -6567,13 +6602,17 @@ class AppleHomeGroup extends LitElement {
     this._sheet = el;
     requestAnimationFrame(() => el.show());
   }
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
+  }
+
+  updated() {
+    syncBadge(this);
   }
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
     if (this._sheet) this._sheet.close();
   }
   render() {
