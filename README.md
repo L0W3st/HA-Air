@@ -1,10 +1,8 @@
 # Air HA Dashboard
 
-An tile card for [Home Assistant](https://www.home-assistant.io/). Turns ordinary lights, switches, covers, locks and sensors into rounded frosted-glass tiles that **fill with color when they're on** — the signature look — with tap-to-toggle, hold-for-details, and a brightness-aware fill.
+A frosted-glass tile card for [Home Assistant](https://www.home-assistant.io/). Turns ordinary lights, switches, covers, locks and sensors into rounded frosted-glass tiles that **fill with color when they're on** — the signature look — with tap-to-toggle, hold-for-details, and a brightness-aware fill.
 
-![Home Card](docs/preview.png)
-
-> Status: **v0.1.0** — early but usable. Feedback and PRs welcome.
+> Status: **v0.9.x** — usable day to day. Feedback and PRs welcome.
 
 ## Features
 
@@ -30,7 +28,7 @@ An tile card for [Home Assistant](https://www.home-assistant.io/). Turns ordinar
 
 1. HACS → **Frontend** → ⋮ → **Custom repositories**.
 2. Add this repo URL, category **Dashboard** (Lovelace).
-3. Install **Apple Home Card**. HACS adds the resource automatically.
+3. Install **Air HA Dashboard**. HACS adds the resource automatically.
 4. Hard-refresh your browser (Ctrl/Cmd-Shift-R).
 
 ### Manual
@@ -50,8 +48,10 @@ The package ships several cards, all sharing the same frosted look and the detai
 | `custom:apple-home-media-card` | `media_player` | Wide tile: artwork background + inline ⏮ ⏯ ⏭. |
 | `custom:apple-home-climate-card` | `climate` | Current/target temperature with inline − / +. |
 | `custom:apple-home-vacuum-card` | `vacuum` | Dedicated vacuum tile with a richer sheet, animated cleaning state, and quick room actions. |
+| `custom:apple-home-cover-card` | `cover` | Blind/shade/garage tile: drag to set position, tap to open/close (or stop while moving), hold for the sheet. |
 | `custom:apple-home-fan-card` | `fan` | Dedicated fan tile with direct power/speed controls and a fan detail sheet. |
 | `custom:apple-home-chip` | Compact status entities | Small standalone glass chips for battery, mode, presence, and sensor status. |
+| `custom:apple-home-status-card` | Several sensors | A glanceable panel of readouts (temperature, humidity, doors/windows, motion, leaks, locks); tints amber when something needs attention. |
 | `custom:apple-home-area-card` | A group of entities | Room summary ("2 of 3 on"); tap toggles the group or navigates. |
 | `custom:apple-home-weather-card` | `weather` | Condition + temperature + forecast strip; condition-aware gradient. |
 | `custom:apple-home-graph-card` | numeric `sensor` | Current value + sparkline of recent history. |
@@ -118,7 +118,7 @@ or other integrations.
 ### Fan tile
 
 ```yaml
-type: custom:-home-fan-card
+type: custom:apple-home-fan-card
 entity: fan.bedroom
 name: Bedroom Fan
 ```
@@ -126,7 +126,7 @@ name: Bedroom Fan
 ### Status chips
 
 ```yaml
-type: custom:-home-chip
+type: custom:apple-home-chip
 entity: sensor.rocky_battery
 name: Battery
 icon: mdi:battery
@@ -135,13 +135,36 @@ color: "#30d158"
 
 Use chips for compact battery, mode, presence, and sensor status around larger cards.
 
+### Status panel
+
+```yaml
+type: custom:apple-home-status-card
+title: Living Room
+columns: 3              # optional; auto-fits when omitted
+items:
+  - sensor.living_room_temperature
+  - sensor.living_room_humidity
+  - entity: binary_sensor.front_door
+    name: Front Door
+```
+
+### Cover tile
+
+```yaml
+type: custom:apple-home-cover-card
+entity: cover.living_room_blind
+```
+
+Drag up/down to set position (if the cover supports it), tap to open/close or stop while
+moving, hold for the detail sheet.
+
 ### Background
 
 Drop one of these anywhere on a dashboard. It paints a full-screen backdrop behind
 **every** view and (optionally) shows a preset picker. The choice is saved per-browser.
 
 ```yaml
-type: custom:-home-background
+type: custom:apple-home-background
 background: aurora      # aurora · sunset · ocean · midnight · mesh · mono
 selector: true          # show the inline preset picker
 ```
@@ -161,13 +184,13 @@ it with the companion theme for the cleanest result. Both the backdrop drift and
 | `size`              | string | `medium`                 | Tile footprint: `small` · `medium` · `large` · `wide` · `hero`. |
 | `slider_direction`  | string | `up`                     | Lights only: `up` fills from the bottom (drag up = brighter); `down` fills from the top (drag down = brighter). |
 | `tap_action`        | object | `{action: toggle}`       | Standard HA action object.                                     |
-| `hold_action`       | object | `{action: more-info}`    | Standard HA action object.                                     |
-| `double_tap_action` | object | `{action: more-info}`    | Standard HA action object.                                     |
+| `hold_action`       | object | `{action: controls}`     | Standard HA action object. `controls` opens the detail sheet.  |
+| `double_tap_action` | object | `{action: controls}`     | Standard HA action object. `controls` opens the detail sheet.  |
 
 ### Sizing
 
 ```yaml
-- type: custom:-home-card
+- type: custom:apple-home-card
   entity: weather.home
   size: large        # small · medium · large · wide · hero
 ```
@@ -179,20 +202,20 @@ same way, because each tile is a CSS size container.
 ### Weather & graph tiles
 
 ```yaml
-- type: custom:-home-weather-card
+- type: custom:apple-home-weather-card
   entity: weather.home
   size: large
   forecast_days: 7 # optional, defaults to 7
   animated: true   # optional, disable to turn off weather motion
 
-- type: custom:-home-graph-card
+- type: custom:apple-home-graph-card
   entity: sensor.living_room_temperature
   name: Temperature
   hours: 24          # how much history to plot
   # color: "#ff9f0a" # optional; otherwise inferred from device_class
 ```
 
-`custom:-home-weather-card` supports the same `size` values as the main tile.
+`custom:apple-home-weather-card` supports the same `size` values as the main tile.
 If your weather entity does not expose a `forecast` attribute, the card falls back to Home Assistant's live forecast subscription automatically.
 
 The graph tile pulls history from Home Assistant's recorder, so the sensor must be recorded
