@@ -17,7 +17,7 @@ const LitElement =
 const html = LitElement.prototype.html;
 const css = LitElement.prototype.css;
 
-const VERSION = "0.9.5";
+const VERSION = "0.9.6";
 
 /* eslint-disable no-console */
 console.info(
