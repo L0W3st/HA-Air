@@ -59,14 +59,16 @@ const DOMAIN_BEHAVIOR = {
 };
 
 // Apple-ish default accent per domain (used when no `color` configured).
+// These tint icons on a lit (white) tile, so they're a little deeper than
+// pure system colours to stay readable on white.
 const DOMAIN_ACCENT = {
-  light: "#ffd60a", // warm
+  light: "#f5a524", // warm lamp amber
   switch: "#0a84ff",
   input_boolean: "#0a84ff",
-  fan: "#64d2ff",
-  lock: "#30d158",
+  fan: "#1aa7d9",
+  lock: "#28b14c",
   cover: "#0a84ff",
-  vacuum: "#64d2ff",
+  vacuum: "#1aa7d9",
   climate: "#ff9f0a",
   media_player: "#bf5af2",
   automation: "#5e5ce6",
@@ -75,9 +77,9 @@ const DOMAIN_ACCENT = {
   button: "#8e8e93",
   input_button: "#8e8e93",
   alarm_control_panel: "#ff453a",
-  binary_sensor: "#30d158",
-  person: "#30d158",
-  device_tracker: "#30d158",
+  binary_sensor: "#28b14c",
+  person: "#28b14c",
+  device_tracker: "#28b14c",
   _default: "#0a84ff",
 };
 
@@ -292,6 +294,16 @@ function nextTargetTemp(hass, stateObj, delta) {
 }
 // Open the Apple Home detail sheet for an entity. Returns the element so the
 // caller can keep feeding it fresh `hass`.
+// A light's own colour as a CSS colour, or null when it's off, has no colour,
+// or is near-white (white bulbs keep the warm default).
+function lightColor(s) {
+  const rgb = s && s.state === "on" && s.attributes.rgb_color;
+  if (!Array.isArray(rgb) || rgb.length < 3) return null;
+  const [r, g, b] = rgb;
+  if (Math.min(r, g, b) > 200) return null;
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
   window.matchMedia &&
@@ -686,6 +698,11 @@ class AppleHomeCard extends LitElement {
       const dc = s.attributes.device_class;
       if (["door", "window", "garage_door", "opening"].includes(dc)) return "#ff9f0a";
     }
+    // A coloured bulb tints its icon with its real colour.
+    if (d === "light" && s) {
+      const c = lightColor(s);
+      if (c) return c;
+    }
     return DOMAIN_ACCENT[d] || DOMAIN_ACCENT._default;
   }
 
@@ -1062,6 +1079,11 @@ class AppleHomeCard extends LitElement {
         --aha-text: var(--aha-tile-foreground, var(--primary-text-color));
         --aha-subtext: var(--aha-tile-subforeground, var(--secondary-text-color));
         --aha-badge-bg: var(--aha-badge-background, rgba(120, 120, 128, 0.24));
+        /* "Lit" tiles: an active accessory turns a soft white and its icon
+           takes the colour, rather than the whole tile flooding with colour. */
+        --aha-lit: var(--aha-tile-on-background, rgba(255, 255, 255, 0.94));
+        --aha-lit-text: var(--aha-tile-on-foreground, #1c1c1e);
+        --aha-lit-subtext: var(--aha-tile-on-subforeground, rgba(60, 60, 67, 0.7));
         /* The tile is a size container so its contents scale to whatever cell
            the grid (or a drag-resize) gives it. */
         container-type: inline-size;
@@ -1084,8 +1106,8 @@ class AppleHomeCard extends LitElement {
         min-height: var(--aha-tile-min-height, 80px);
         border-radius: var(--aha-radius);
         background: var(--aha-tile-bg);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         overflow: hidden;
         cursor: pointer;
         user-select: none;
@@ -1108,11 +1130,14 @@ class AppleHomeCard extends LitElement {
         transition-timing-function: cubic-bezier(0.3, 0, 0.5, 1);
       }
 
-      /* An active tile casts a soft glow in its own colour. */
+      /* A lit tile lifts a little off the glass. */
       .tile[data-state="on"] {
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.1);
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08),
-          0 10px 30px -8px color-mix(in srgb, var(--aha-accent) 70%, transparent);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 10px 28px rgba(0, 0, 0, 0.18);
+      }
+      /* Dimmable lights / covers: the whole tile glows faintly and the solid
+         white part shows the level. */
+      .tile[data-state="on"][data-level] {
+        background: rgba(255, 255, 255, 0.5);
       }
 
       .tile:focus-visible {
@@ -1132,12 +1157,7 @@ class AppleHomeCard extends LitElement {
            the GPU, where animating height re-lays-out the tile every frame. */
         transform: scaleY(var(--aha-fill-scale, 1));
         transform-origin: bottom;
-        background: var(--aha-accent);
-        /* A faint lit edge along the top of the fill. */
-        background-image: linear-gradient(
-          rgba(255, 255, 255, 0.22),
-          rgba(255, 255, 255, 0) 14px
-        );
+        background: var(--aha-lit);
         opacity: var(--aha-fill-opacity, 0);
         transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
           opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1147,10 +1167,16 @@ class AppleHomeCard extends LitElement {
       .bloom {
         position: absolute;
         border-radius: 50%;
+        /* A brief wash of the accessory's colour from the tap point. */
         background: radial-gradient(
           circle,
-          rgba(255, 255, 255, 0.55),
+          rgba(255, 255, 255, 0.5),
           rgba(255, 255, 255, 0) 65%
+        );
+        background: radial-gradient(
+          circle,
+          color-mix(in srgb, var(--aha-accent) 45%, transparent),
+          transparent 65%
         );
         opacity: 0;
         pointer-events: none;
@@ -1188,8 +1214,11 @@ class AppleHomeCard extends LitElement {
       }
 
       .tile[data-state="on"] .badge {
-        background: rgba(255, 255, 255, 0.92);
-        color: #1c1c1e;
+        background: rgba(255, 255, 255, 0.95);
+        background: color-mix(in srgb, var(--aha-accent) 18%, #fff);
+        color: var(--aha-accent);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6),
+          0 1px 3px rgba(0, 0, 0, 0.08);
       }
 
       /* --- Micro-animations: a gentle "pop" on state change ---------------- */
@@ -1276,10 +1305,8 @@ class AppleHomeCard extends LitElement {
       }
 
       /* When on, text sits on the colored fill — make it legible. */
-      .tile[data-state="on"] .name,
-      .tile[data-state="on"] .state {
-        color: #1c1c1e;
-      }
+      .tile[data-state="on"] .name { color: var(--aha-lit-text); }
+      .tile[data-state="on"] .state { color: var(--aha-lit-subtext); }
 
       .tile[data-state="unavailable"] {
         opacity: 0.5;
@@ -1911,7 +1938,9 @@ class AppleHomeSheet extends LitElement {
       .big-slider .fill {
         position: absolute;
         inset: 0;
+        /* A warm white wash of the light's colour, not a solid block. */
         background: var(--sheet-accent);
+        background: color-mix(in srgb, var(--sheet-accent) 35%, #fff);
         transform-origin: bottom;
         transition: transform 0.12s linear;
       }
@@ -2026,7 +2055,8 @@ class AppleHomeSheet extends LitElement {
         width: 100%; padding: 40px 0; --mdc-icon-size: 40px; font-size: 17px;
         transition: background 0.3s ease;
       }
-      .toggle-big.on { background: var(--sheet-accent); color: #1c1c1e; }
+      .toggle-big.on { background: rgba(255, 255, 255, 0.92); color: #1c1c1e; }
+      .toggle-big.on ha-icon, .toggle-big.on ha-state-icon { color: var(--sheet-accent); }
 
       .readout { text-align: center; padding: 30px 0; }
       .big-state { font-size: 40px; font-weight: 600; }
@@ -2201,8 +2231,8 @@ class AppleHomeMediaCard extends LitElement {
         position: relative; height: 100%; min-height: 96px;
         border-radius: 22px; overflow: hidden; cursor: pointer;
         background: rgba(120, 120, 128, 0.16);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.1);
         transition: transform 0.28s cubic-bezier(0.2,0.9,0.3,1.2);
         font-family: ${FONT_STACK_CSS};
@@ -2344,7 +2374,11 @@ class AppleHomeClimateCard extends LitElement {
     if (!s) return html`<ha-card><div class="tile">Not found</div></ha-card>`;
     const a = s.attributes;
     const on = s.state !== "off";
-    const accent = on ? this._config.color || "#ff9f0a" : "transparent";
+    // Heating reads warm, cooling cool, anything else neutral blue.
+    const act = a.hvac_action || "";
+    const mode = /heat|cool/.test(act) ? act : s.state;
+    const modeAccent = /cool/.test(mode) ? "#0a84ff" : /heat/.test(mode) ? "#ff8a1f" : "#5e8cff";
+    const accent = on ? this._config.color || modeAccent : "transparent";
     const name = this._config.name || a.friendly_name || this._config.entity;
 
     return html`
@@ -2380,20 +2414,26 @@ class AppleHomeClimateCard extends LitElement {
         position: relative; height: 100%; min-height: 96px; box-sizing: border-box;
         border-radius: 22px; padding: 14px 16px; cursor: default;
         display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
-        background: rgba(120,120,128,0.16);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        background: var(--aha-tile-background, rgba(120,120,128,0.16));
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.1);
         font-family: ${FONT_STACK_CSS};
       }
-      .tile.on { background: var(--accent); }
+      .tile.on {
+        background: var(--aha-tile-on-background, rgba(255, 255, 255, 0.94));
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 10px 28px rgba(0, 0, 0, 0.18);
+      }
       .head { display: flex; align-items: center; gap: 10px; cursor: pointer; min-width: 0; }
       .badge {
         width: 34px; height: 34px; border-radius: 50%; flex: none;
         display: grid; place-items: center; --mdc-icon-size: 20px;
         background: rgba(120,120,128,0.28); color: var(--primary-text-color);
       }
-      .tile.on .badge { background: rgba(255,255,255,0.92); color: #1c1c1e; }
+      .tile.on .badge {
+        background: color-mix(in srgb, var(--accent) 18%, #fff);
+        color: var(--accent);
+      }
       .labels { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
       .name {
         font-weight: 600; font-size: 15px; letter-spacing: -0.01em; line-height: 1.12;
@@ -2401,14 +2441,15 @@ class AppleHomeClimateCard extends LitElement {
         overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
       }
       .sub { font-size: 13px; font-weight: 500; color: var(--secondary-text-color); line-height: 1.15; }
-      .tile.on .name, .tile.on .sub { color: #1c1c1e; }
+      .tile.on .name { color: #1c1c1e; }
+      .tile.on .sub { color: rgba(60, 60, 67, 0.7); }
       .dial { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
       .dial button {
         width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
         background: rgba(120,120,128,0.28); color: var(--primary-text-color);
         display: grid; place-items: center; --mdc-icon-size: 20px;
       }
-      .tile.on .dial button { background: rgba(255,255,255,0.35); color: #1c1c1e; }
+      .tile.on .dial button { background: rgba(120, 120, 128, 0.14); color: #1c1c1e; }
       .dial button[disabled] { opacity: 0.4; cursor: default; }
       .target { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; color: var(--primary-text-color); }
       .tile.on .target { color: #1c1c1e; }
@@ -2543,7 +2584,7 @@ class AppleHomeAreaCard extends LitElement {
   render() {
     if (!this._config || !this.hass) return html``;
     const on = this._onCount() > 0;
-    const accent = this._config.color || "#ffd60a";
+    const accent = this._config.color || DOMAIN_ACCENT.light;
     return html`
       <ha-card style="--accent:${accent}">
         <div
@@ -2577,22 +2618,28 @@ class AppleHomeAreaCard extends LitElement {
         position: relative; height: 100%; min-height: 84px; box-sizing: border-box;
         border-radius: 22px; padding: 14px 16px; cursor: pointer;
         display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
-        background: rgba(120,120,128,0.16);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        background: var(--aha-tile-background, rgba(120,120,128,0.16));
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.1);
         transition: transform 0.28s cubic-bezier(0.2,0.9,0.3,1.2), background 0.4s ease;
         font-family: ${FONT_STACK_CSS};
       }
       .tile[data-pressed] { transform: scale(0.95); }
-      .tile.on { background: var(--accent); }
+      .tile.on {
+        background: var(--aha-tile-on-background, rgba(255, 255, 255, 0.94));
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 10px 28px rgba(0, 0, 0, 0.18);
+      }
       .badge {
         width: 36px; height: 36px; border-radius: 50%;
         display: grid; place-items: center; --mdc-icon-size: 20px;
         background: rgba(120,120,128,0.28); color: var(--primary-text-color);
         transition: background 0.4s ease, color 0.4s ease;
       }
-      .tile.on .badge { background: rgba(255,255,255,0.92); color: #1c1c1e; }
+      .tile.on .badge {
+        background: color-mix(in srgb, var(--accent) 18%, #fff);
+        color: var(--accent);
+      }
       .info { display: flex; flex-direction: column; min-width: 0; }
       .name {
         font-weight: 600; font-size: 15px; letter-spacing: -0.01em;
@@ -2608,7 +2655,8 @@ class AppleHomeAreaCard extends LitElement {
         text-wrap: balance;
       }
       .sub { font-size: 13px; font-weight: 500; color: var(--secondary-text-color); }
-      .tile.on .name, .tile.on .sub { color: #1c1c1e; }
+      .tile.on .name { color: #1c1c1e; }
+      .tile.on .sub { color: rgba(60, 60, 67, 0.7); }
 
       /* Size rules last, so they override the base sizes above. */
       @container ahatile (max-width: 132px) {
@@ -2645,57 +2693,59 @@ customElements.define("apple-home-area-card", AppleHomeAreaCard);
 // dashboard, plus an optional inline selector to switch between presets.
 // ===========================================================================
 
+// Wallpapers: deep, low-saturation tones with soft light pools, so the
+// frosted tiles read as glass and the colour comes from the accessories.
 const BACKGROUNDS = {
   aurora: {
     name: "Aurora",
     dark: true,
     css:
-      "radial-gradient(at 18% 22%, #5e5ce6 0px, transparent 45%)," +
-      "radial-gradient(at 82% 8%, #ff375f 0px, transparent 40%)," +
-      "radial-gradient(at 75% 85%, #0a84ff 0px, transparent 45%)," +
-      "radial-gradient(at 8% 88%, #bf5af2 0px, transparent 40%)," +
-      "linear-gradient(135deg, #0b0b1f, #18112e)",
+      "radial-gradient(at 15% 12%, rgba(98, 112, 190, 0.55) 0px, transparent 50%)," +
+      "radial-gradient(at 88% 18%, rgba(146, 98, 160, 0.38) 0px, transparent 45%)," +
+      "radial-gradient(at 80% 88%, rgba(60, 128, 150, 0.42) 0px, transparent 50%)," +
+      "radial-gradient(at 10% 92%, rgba(84, 70, 140, 0.4) 0px, transparent 45%)," +
+      "linear-gradient(160deg, #141826, #0c0e17)",
   },
   sunset: {
     name: "Sunset",
     dark: true,
     css:
-      "radial-gradient(at 15% 20%, #ff9f0a 0px, transparent 45%)," +
-      "radial-gradient(at 85% 15%, #ff375f 0px, transparent 42%)," +
-      "radial-gradient(at 70% 90%, #bf5af2 0px, transparent 48%)," +
-      "linear-gradient(135deg, #2a0f1f, #1a0f2e)",
+      "radial-gradient(at 18% 15%, rgba(196, 128, 84, 0.45) 0px, transparent 48%)," +
+      "radial-gradient(at 86% 20%, rgba(164, 88, 112, 0.38) 0px, transparent 45%)," +
+      "radial-gradient(at 70% 92%, rgba(112, 80, 140, 0.4) 0px, transparent 50%)," +
+      "linear-gradient(160deg, #1c1517, #120e14)",
   },
   ocean: {
     name: "Ocean",
     dark: true,
     css:
-      "radial-gradient(at 20% 25%, #0a84ff 0px, transparent 45%)," +
-      "radial-gradient(at 80% 20%, #64d2ff 0px, transparent 42%)," +
-      "radial-gradient(at 75% 85%, #30d158 0px, transparent 48%)," +
-      "linear-gradient(135deg, #06121f, #0a1f2e)",
+      "radial-gradient(at 20% 18%, rgba(64, 120, 176, 0.5) 0px, transparent 48%)," +
+      "radial-gradient(at 85% 25%, rgba(70, 150, 170, 0.35) 0px, transparent 45%)," +
+      "radial-gradient(at 72% 90%, rgba(60, 130, 110, 0.38) 0px, transparent 50%)," +
+      "linear-gradient(160deg, #0f171d, #0a1014)",
   },
   midnight: {
     name: "Midnight",
     dark: true,
     css:
-      "radial-gradient(at 50% 0%, #232357 0px, transparent 55%)," +
-      "radial-gradient(at 85% 90%, #1d3a5e 0px, transparent 50%)," +
-      "linear-gradient(180deg, #0a0a14, #050510)",
+      "radial-gradient(at 50% 0%, rgba(70, 76, 120, 0.45) 0px, transparent 55%)," +
+      "radial-gradient(at 85% 95%, rgba(50, 70, 100, 0.35) 0px, transparent 50%)," +
+      "linear-gradient(180deg, #0d0e14, #07080b)",
   },
   mesh: {
     name: "Mesh",
     dark: false,
     css:
-      "radial-gradient(at 0% 0%, #ffd9ec 0px, transparent 50%)," +
-      "radial-gradient(at 100% 0%, #cfe5ff 0px, transparent 50%)," +
-      "radial-gradient(at 100% 100%, #d7fbe8 0px, transparent 50%)," +
-      "radial-gradient(at 0% 100%, #fff4cc 0px, transparent 50%)," +
-      "linear-gradient(#f6f7fb, #eef0f7)",
+      "radial-gradient(at 0% 0%, #f3e3ea 0px, transparent 50%)," +
+      "radial-gradient(at 100% 0%, #dde7f5 0px, transparent 50%)," +
+      "radial-gradient(at 100% 100%, #e0efe8 0px, transparent 50%)," +
+      "radial-gradient(at 0% 100%, #f5eedc 0px, transparent 50%)," +
+      "linear-gradient(#f2f3f7, #e9ebf0)",
   },
   mono: {
     name: "Mono",
     dark: false,
-    css: "linear-gradient(160deg, #fbfbfd, #e9ebf1)",
+    css: "linear-gradient(160deg, #f6f6f8, #e8e9ed)",
   },
 };
 
@@ -2865,8 +2915,8 @@ class AppleHomeBackground extends LitElement {
     return css`
       ha-card {
         background: var(--aha-tile-background, rgba(120, 120, 128, 0.16));
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         border: none;
         border-radius: 22px;
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.1);
@@ -3638,8 +3688,8 @@ class AppleHomeGraphCard extends LitElement {
         border: none;
         border-radius: 22px;
         background: var(--aha-tile-background, rgba(120, 120, 128, 0.16));
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.1);
         overflow: hidden;
         font-family: ${FONT_STACK_CSS};
@@ -4689,16 +4739,15 @@ class AppleHomeVacuumCard extends LitElement {
         overflow: hidden;
         cursor: pointer;
         background: rgba(120, 120, 128, 0.16);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.1);
         transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2), background 0.32s ease, box-shadow 0.32s ease;
         outline: none;
       }
       .tile.on {
-        background:
-          linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04)),
-          color-mix(in srgb, var(--accent) 42%, rgba(120, 120, 128, 0.12));
+        background: var(--aha-tile-on-background, rgba(255, 255, 255, 0.94));
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 10px 28px rgba(0, 0, 0, 0.18);
       }
       .tile[data-pressed] {
         transform: scale(0.97);
@@ -4711,6 +4760,8 @@ class AppleHomeVacuumCard extends LitElement {
         position: absolute;
         inset: -45%;
         background: radial-gradient(circle at center, rgba(255,255,255,0.3), rgba(255,255,255,0) 58%);
+        /* On the lit tile the sweep is a faint wash of the vacuum's colour. */
+        background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 22%, transparent), transparent 58%);
         opacity: 0;
         transform: translateX(-30%);
         pointer-events: none;
@@ -4755,8 +4806,8 @@ class AppleHomeVacuumCard extends LitElement {
         transition: background 0.32s ease, color 0.32s ease;
       }
       .tile.on .badge {
-        background: rgba(255,255,255,0.92);
-        color: #111;
+        background: color-mix(in srgb, var(--accent) 18%, #fff);
+        color: var(--accent);
       }
       .copy {
         display: flex;
@@ -4795,9 +4846,9 @@ class AppleHomeVacuumCard extends LitElement {
         -webkit-line-clamp: 2;
         overflow: hidden;
       }
-      .tile.on .name,
+      .tile.on .name { color: #1c1c1e; }
       .tile.on .state {
-        color: #111;
+        color: rgba(60, 60, 67, 0.7);
       }
       .meta {
         display: flex;
@@ -4814,7 +4865,8 @@ class AppleHomeVacuumCard extends LitElement {
         font-weight: 600;
       }
       .tile.on .meta-pill {
-        background: rgba(255,255,255,0.5);
+        background: rgba(120, 120, 128, 0.14);
+        color: #1c1c1e;
       }
       .tile[data-pop="cleaning"] {
         animation: aha-vacuum-start 0.58s cubic-bezier(0.22, 0.9, 0.24, 1.16);
@@ -5082,15 +5134,14 @@ class AppleHomeFanCard extends LitElement {
         overflow: hidden;
         cursor: pointer;
         background: rgba(120, 120, 128, 0.16);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.1);
         transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2), background 0.32s ease;
       }
       .tile.on {
-        background:
-          linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.04)),
-          color-mix(in srgb, var(--accent) 36%, rgba(120, 120, 128, 0.12));
+        background: var(--aha-tile-on-background, rgba(255, 255, 255, 0.94));
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 10px 28px rgba(0, 0, 0, 0.18);
       }
       .tile[data-pressed] { transform: scale(0.97); }
       .wash {
@@ -5100,7 +5151,7 @@ class AppleHomeFanCard extends LitElement {
         opacity: 0;
         pointer-events: none;
       }
-      .tile.on .wash { opacity: 1; }
+      .tile.on .wash { opacity: 0; }
       .content {
         position: relative;
         height: 100%;
@@ -5129,8 +5180,8 @@ class AppleHomeFanCard extends LitElement {
         transition: background 0.32s ease, color 0.32s ease;
       }
       .tile.on .badge {
-        background: rgba(255,255,255,0.92);
-        color: #111;
+        background: color-mix(in srgb, var(--accent) 18%, #fff);
+        color: var(--accent);
       }
       .blade.spin {
         display: inline-flex;
@@ -5171,8 +5222,8 @@ class AppleHomeFanCard extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .tile.on .name,
-      .tile.on .state { color: #111; }
+      .tile.on .name { color: #1c1c1e; }
+      .tile.on .state { color: rgba(60, 60, 67, 0.7); }
       .meta {
         display: flex;
         flex-wrap: wrap;
@@ -5187,7 +5238,7 @@ class AppleHomeFanCard extends LitElement {
         font-size: 12px;
         font-weight: 600;
       }
-      .tile.on .meta-pill { background: rgba(255,255,255,0.48); }
+      .tile.on .meta-pill { background: rgba(120, 120, 128, 0.14); color: #1c1c1e; }
       .actions {
         display: grid;
         grid-template-columns: 40px minmax(0, 1fr) 40px;
@@ -5215,6 +5266,8 @@ class AppleHomeFanCard extends LitElement {
         background: rgba(255,255,255,0.9);
         color: #111;
       }
+      .tile.on .control { background: rgba(120, 120, 128, 0.14); color: #1c1c1e; }
+      .tile.on .control.power.on { background: rgba(120, 120, 128, 0.2); }
       .control.wide {
         grid-column: 1 / -1;
       }
@@ -5628,9 +5681,9 @@ class AppleHomeCoverCard extends LitElement {
         overflow: hidden;
         cursor: pointer;
         touch-action: pan-x;
-        background: rgba(120, 120, 128, 0.16);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        background: var(--aha-tile-background, rgba(120, 120, 128, 0.16));
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.1);
         transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2),
           box-shadow 0.32s ease;
@@ -5664,7 +5717,7 @@ class AppleHomeCoverCard extends LitElement {
             rgba(255, 255, 255, 0.16),
             rgba(255, 255, 255, 0)
           ),
-          color-mix(in srgb, var(--accent) 48%, rgba(120, 120, 128, 0.22));
+          color-mix(in srgb, var(--accent) 20%, rgba(150, 150, 160, 0.3));
         box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
         transition: height 0.55s cubic-bezier(0.22, 0.9, 0.24, 1);
       }
@@ -5706,7 +5759,7 @@ class AppleHomeCoverCard extends LitElement {
             rgba(255, 255, 255, 0.12),
             rgba(255, 255, 255, 0)
           ),
-          color-mix(in srgb, var(--accent) 40%, rgba(90, 90, 96, 0.4));
+          color-mix(in srgb, var(--accent) 14%, rgba(110, 110, 118, 0.42));
       }
       .tile.door .pane::after {
         content: "";
@@ -6053,8 +6106,8 @@ class AppleHomeChip extends LitElement {
         align-items: center;
         gap: 10px;
         background: rgba(120, 120, 128, 0.14);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 6px 18px rgba(0,0,0,0.08);
         cursor: pointer;
         transition: transform 0.24s ease, background 0.24s ease;
@@ -6067,9 +6120,12 @@ class AppleHomeChip extends LitElement {
           color-mix(in srgb, var(--accent) 18%, rgba(120, 120, 128, 0.14));
       }
       .chip.on {
-        background:
-          linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04)),
-          color-mix(in srgb, var(--accent) 42%, rgba(120, 120, 128, 0.12));
+        background: var(--aha-tile-on-background, rgba(255, 255, 255, 0.94));
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 6px 18px rgba(0, 0, 0, 0.18);
+      }
+      .chip.on .icon-badge {
+        background: color-mix(in srgb, var(--accent) 18%, #fff);
+        color: var(--accent);
       }
       .chip[data-pressed] { transform: scale(0.98); }
       .icon-badge {
@@ -6364,8 +6420,8 @@ class AppleHomeStatusCard extends LitElement {
         padding: 16px;
         border-radius: 26px;
         background: rgba(120, 120, 128, 0.16);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.1);
       }
       .title {
@@ -6401,12 +6457,7 @@ class AppleHomeStatusCard extends LitElement {
         transform: scale(0.96);
       }
       .cell.on {
-        background: linear-gradient(
-            180deg,
-            rgba(255, 255, 255, 0.16),
-            rgba(255, 255, 255, 0.03)
-          ),
-          color-mix(in srgb, var(--accent) 30%, rgba(120, 120, 128, 0.14));
+        background: var(--aha-tile-on-background, rgba(255, 255, 255, 0.94));
       }
       .cell.alert {
         background: linear-gradient(
@@ -6429,9 +6480,12 @@ class AppleHomeStatusCard extends LitElement {
         --mdc-icon-size: 18px;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
       }
-      .cell.on .cell-icon,
       .cell.alert .cell-icon {
         background: rgba(255, 255, 255, 0.95);
+      }
+      .cell.on .cell-icon {
+        background: color-mix(in srgb, var(--accent) 18%, #fff);
+        color: var(--accent);
       }
       .cell-val {
         font-size: 17px;
@@ -6865,8 +6919,8 @@ class AppleHomeGroup extends LitElement {
         border-radius: 22px; padding: 15px 17px; cursor: pointer;
         display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
         background: var(--aha-tile-background, rgba(120,120,128,0.16));
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(130%);
+        -webkit-backdrop-filter: blur(24px) saturate(130%);
         box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.1);
         transition: transform 0.28s cubic-bezier(0.2,0.9,0.3,1.2);
         will-change: transform;

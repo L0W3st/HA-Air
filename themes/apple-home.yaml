@@ -8,6 +8,7 @@ Apple Home:
   aha-tile-min-height: "84px"
   aha-tile-background: "rgba(120, 120, 128, 0.16)"
   aha-badge-background: "rgba(120, 120, 128, 0.24)"
+  aha-tile-on-background: "rgba(255, 255, 255, 0.94)"  # active tiles light up white
   aha-font: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif"
 
   # ---- Global Home Assistant look -----------------------------------------
