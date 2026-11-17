@@ -756,6 +756,9 @@ class AppleHomeCard extends LitElement {
   // Pointer handling: tap / hold / double-tap, plus vertical drag-to-set-level
   // on dimmable lights and positionable covers.
   _onPointerDown(e) {
+    // Primary button / touch / pen only: a right-click shouldn't toggle the
+    // accessory (or start a hold) on its way to the context menu.
+    if (e.button !== 0) return;
     this._pressed = true;
     this._holdFired = false;
     this._dragging = false;
@@ -795,6 +798,7 @@ class AppleHomeCard extends LitElement {
   }
 
   _onPointerUp(e) {
+    if (!this._pressed) return; // press was ignored (e.g. right-click) or cancelled
     this._pressed = false;
     window.clearTimeout(this._holdTimer);
     try { this._tileEl && this._tileEl.releasePointerCapture(e.pointerId); } catch (x) {}
@@ -5224,6 +5228,9 @@ class AppleHomeCoverCard extends LitElement {
 
   // --- Gestures: tap / hold / vertical drag-to-position --------------------
   _onPointerDown(e) {
+    // Primary button / touch / pen only: a right-click shouldn't toggle the
+    // accessory (or start a hold) on its way to the context menu.
+    if (e.button !== 0) return;
     this._pressed = true;
     this._holdFired = false;
     this._dragging = false;
@@ -5253,6 +5260,7 @@ class AppleHomeCoverCard extends LitElement {
   }
 
   _onPointerUp(e) {
+    if (!this._pressed) return; // press was ignored (e.g. right-click) or cancelled
     this._pressed = false;
     window.clearTimeout(this._holdTimer);
     try { this._tileEl && this._tileEl.releasePointerCapture(e.pointerId); } catch (x) {}
@@ -5260,11 +5268,17 @@ class AppleHomeCoverCard extends LitElement {
     if (this._dragging) {
       this._dragging = false;
       if (this._drag != null) {
+        const target = this._drag;
         this.hass.callService("cover", "set_cover_position", {
           entity_id: this._config.entity,
-          position: this._drag,
+          position: target,
         });
         this._haptic("light");
+        // Hold the dragged position on screen until HA reports it (updated()
+        // clears it), so the tile doesn't snap back to the old position first.
+        this._pending = target;
+        window.clearTimeout(this._pendingTimer);
+        this._pendingTimer = window.setTimeout(() => (this._pending = null), 4000);
       }
       this._drag = null;
       return;
