@@ -3192,7 +3192,9 @@ class AppleHomeGraphCard extends LitElement {
   setConfig(config) {
     if (!config.entity) throw new Error("You must define a sensor entity");
     this._config = { hours: 24, ...config };
-    this._points = undefined;
+    // History is (re)fetched from updated() once hass is available, and only
+    // when the entity or window actually changes, so editing e.g. the name in
+    // the editor doesn't blank the chart.
   }
 
   getCardSize() {
@@ -3209,13 +3211,27 @@ class AppleHomeGraphCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._fetch();
+    // Refresh on re-attach (e.g. switching back to this view), but only if a
+    // first fetch already happened — before that, updated() handles it.
+    if (this._historyKey) this._fetch();
+    window.clearInterval(this._timer);
     this._timer = window.setInterval(() => this._fetch(), 5 * 60 * 1000);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     window.clearInterval(this._timer);
+  }
+
+  updated() {
+    if (!this.hass || !this._config) return;
+    const key = `${this._config.entity}|${this._config.hours || 24}`;
+    if (key === this._historyKey) return;
+    // First time hass is available, or the entity/window changed: fetch now
+    // rather than waiting up to 5 minutes for the next interval tick.
+    this._historyKey = key;
+    this._points = undefined;
+    this._fetch();
   }
 
   get _stateObj() {
@@ -3237,14 +3253,17 @@ class AppleHomeGraphCard extends LitElement {
 
   async _fetch() {
     if (!this.hass || !this._config) return;
+    const key = this._historyKey;
     const end = new Date();
     const start = new Date(end.getTime() - (this._config.hours || 24) * 3600000);
     try {
       const path =
         `history/period/${start.toISOString()}` +
-        `?filter_entity_id=${this._config.entity}` +
+        `?filter_entity_id=${encodeURIComponent(this._config.entity)}` +
         `&minimal_response&significant_changes_only&no_attributes`;
       const res = await this.hass.callApi("GET", path);
+      // Drop a response for an entity/window we've since moved away from.
+      if (key !== this._historyKey) return;
       const series = (res && res[0]) || [];
       this._points = series
         .map((p) => ({
@@ -3253,7 +3272,7 @@ class AppleHomeGraphCard extends LitElement {
         }))
         .filter((p) => !isNaN(p.v) && !isNaN(p.t));
     } catch (e) {
-      this._points = [];
+      if (key === this._historyKey) this._points = [];
     }
   }
 
