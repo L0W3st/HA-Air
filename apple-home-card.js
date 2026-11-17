@@ -251,16 +251,44 @@ function callConfiguredAction(hass, action) {
   if (!entityId) return;
   const stateObj = hass.states[entityId];
   if (!stateObj) return;
-  const behavior = DOMAIN_BEHAVIOR[domainOf(entityId)];
-  if (!behavior || !behavior.toggle) return;
-  const spec =
-    typeof behavior.toggle === "function"
-      ? behavior.toggle(stateObj)
-      : behavior.toggle;
+  const spec = toggleServiceFor(stateObj);
+  if (!spec) return;
   hass.callService(spec[0], spec[1], {
     entity_id: entityId,
     ...(action.data || action.service_data || {}),
   });
+}
+
+// [domain, service] that flips an entity, using the same rules as the tile
+// (lock → lock/unlock, button → press, cover → open/close, …). Null when the
+// domain has nothing to toggle.
+function toggleServiceFor(stateObj) {
+  if (!stateObj) return null;
+  const behavior = DOMAIN_BEHAVIOR[domainOf(stateObj.entity_id)];
+  if (!behavior || !behavior.toggle) return null;
+  return typeof behavior.toggle === "function"
+    ? behavior.toggle(stateObj)
+    : behavior.toggle;
+}
+
+// Next climate target for a +/- press: snapped to the entity's step and
+// clamped to its min/max. Null when there is no single target to adjust
+// (e.g. heat_cool ranges, or the unit is off and reports no target).
+function nextTargetTemp(hass, stateObj, delta) {
+  const a = stateObj && stateObj.attributes;
+  if (!a || a.temperature == null) return null;
+  const current = Number(a.temperature);
+  if (!Number.isFinite(current)) return null;
+  const fahrenheit =
+    !!(hass && hass.config && hass.config.unit_system) &&
+    hass.config.unit_system.temperature === "°F";
+  const step = Number(a.target_temp_step) || (fahrenheit ? 1 : 0.5);
+  let next = Math.round((current + delta * step) / step) * step;
+  const min = Number(a.min_temp);
+  const max = Number(a.max_temp);
+  if (a.min_temp != null && Number.isFinite(min)) next = Math.max(min, next);
+  if (a.max_temp != null && Number.isFinite(max)) next = Math.min(max, next);
+  return Math.round(next * 100) / 100;
 }
 // Open the Apple Home detail sheet for an entity. Returns the element so the
 // caller can keep feeding it fresh `hass`.
@@ -362,6 +390,27 @@ const LightField = (() => {
   };
 })();
 
+// Keep a card's glass badge registered with the LightField. Lovelace detaches
+// and re-attaches cards when you switch views, and a re-render can swap the
+// badge element (e.g. "Not found" → real tile), so a one-shot firstUpdated()
+// registration goes stale. Call from connectedCallback() and updated().
+function syncBadge(host, selector = ".badge") {
+  const next =
+    host.isConnected && host.renderRoot
+      ? host.renderRoot.querySelector(selector)
+      : null;
+  if (next === host._badge && (!next || host._badgeLive)) return;
+  if (host._badge && host._badge !== next) LightField.unregister(host._badge);
+  host._badge = next;
+  host._badgeLive = !!next;
+  if (next) LightField.register(next);
+}
+
+function releaseBadge(host) {
+  if (host._badge) LightField.unregister(host._badge);
+  host._badgeLive = false;
+}
+
 // Glass-icon styling shared by every card's badge: a frosted body with a static
 // top sheen plus the LightField specular driven by --sx/--sy/--glow.
 const GLASS_BADGE_CSS = css`
@@ -462,6 +511,7 @@ class AppleHomeCard extends LitElement {
   // Keep an open detail sheet fed with fresh state, reconcile the optimistic
   // flag, and fire a tiny "pop" animation whenever the entity flips on/off.
   updated(changed) {
+    syncBadge(this);
     if (!changed.has("hass")) return;
     if (this._sheet && this.hass) this._sheet.hass = this.hass;
     const s = this._stateObj;
@@ -491,7 +541,7 @@ class AppleHomeCard extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   _openControls() {
@@ -514,9 +564,9 @@ class AppleHomeCard extends LitElement {
     return gridFor(this._config && this._config.size, TILE_SIZES.medium);
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   // --- Helpers -------------------------------------------------------------
@@ -706,6 +756,9 @@ class AppleHomeCard extends LitElement {
   // Pointer handling: tap / hold / double-tap, plus vertical drag-to-set-level
   // on dimmable lights and positionable covers.
   _onPointerDown(e) {
+    // Primary button / touch / pen only: a right-click shouldn't toggle the
+    // accessory (or start a hold) on its way to the context menu.
+    if (e.button !== 0) return;
     this._pressed = true;
     this._holdFired = false;
     this._dragging = false;
@@ -745,6 +798,7 @@ class AppleHomeCard extends LitElement {
   }
 
   _onPointerUp(e) {
+    if (!this._pressed) return; // press was ignored (e.g. right-click) or cancelled
     this._pressed = false;
     window.clearTimeout(this._holdTimer);
     try { this._tileEl && this._tileEl.releasePointerCapture(e.pointerId); } catch (x) {}
@@ -1436,18 +1490,22 @@ class AppleHomeSheet extends LitElement {
   _renderClimate(s) {
     const a = s.attributes;
     const target = a.temperature;
-    const step = a.target_temp_step || 0.5;
+    const canAdjust = nextTargetTemp(this.hass, s, 0) != null;
+    const bump = (delta) => {
+      const next = nextTargetTemp(this.hass, s, delta);
+      if (next != null) this._service("climate", "set_temperature", { temperature: next });
+    };
     return html`
       <div class="climate">
         <div class="big-number">
-          <button @click=${() => this._service("climate", "set_temperature", { temperature: target - step })}>
+          <button aria-label="Lower target" ?disabled=${!canAdjust} @click=${() => bump(-1)}>
             <ha-icon icon="mdi:minus"></ha-icon>
           </button>
           <div class="temp-readout">
             <span class="t">${target != null ? `${target}°` : "—"}</span>
             <span class="sub">${a.current_temperature != null ? `Now ${a.current_temperature}°` : ""}</span>
           </div>
-          <button @click=${() => this._service("climate", "set_temperature", { temperature: target + step })}>
+          <button aria-label="Raise target" ?disabled=${!canAdjust} @click=${() => bump(1)}>
             <ha-icon icon="mdi:plus"></ha-icon>
           </button>
         </div>
@@ -1544,11 +1602,9 @@ class AppleHomeSheet extends LitElement {
   }
 
   _renderToggle(s) {
-    const domain = domainOf(s.entity_id);
-    const behavior = DOMAIN_BEHAVIOR[domain];
-    const on = behavior ? behavior.on(s) : s.state === "on";
-    const toggleable = behavior && behavior.toggle;
-    if (!toggleable) {
+    const on = isEntityOn(s);
+    const spec = toggleServiceFor(s);
+    if (!spec) {
       return html`<div class="readout">
         <span class="big-state">${this._capitalize(s.state)}</span>
         ${s.attributes.unit_of_measurement
@@ -1559,10 +1615,19 @@ class AppleHomeSheet extends LitElement {
     return html`
       <button
         class="toggle-big ${on ? "on" : ""}"
-        @click=${() => this._service("homeassistant", on ? "turn_off" : "turn_on")}
+        @click=${() => {
+          // homeassistant.turn_on/off only works for domains that have
+          // turn_on/turn_off services — locks, buttons and scenes don't, so
+          // use the domain's own service for those.
+          if (spec[0] === "homeassistant") {
+            this._service("homeassistant", on ? "turn_off" : "turn_on");
+          } else {
+            this._service(spec[0], spec[1]);
+          }
+        }}
       >
         <ha-state-icon .hass=${this.hass} .stateObj=${s}></ha-state-icon>
-        <span>${on ? "On" : "Off"}</span>
+        <span>${describeEntityState(s, on)}</span>
       </button>
     `;
   }
@@ -1793,6 +1858,7 @@ class AppleHomeSheet extends LitElement {
         background: rgba(120,120,128,0.4); color: #fff; cursor: pointer;
         --mdc-icon-size: 24px; display: grid; place-items: center;
       }
+      .big-number button[disabled] { opacity: 0.4; cursor: default; }
       .temp-readout { text-align: center; display: flex; flex-direction: column; }
       .temp-readout .t { font-size: 40px; font-weight: 600; letter-spacing: -0.02em; }
       .temp-readout .sub { font-size: 13px; color: var(--sheet-sub); }
@@ -1858,19 +1924,20 @@ class AppleHomeMediaCard extends LitElement {
     return onlyIfEntitiesChanged(this, changed, [this._config.entity], ["_pressed"]);
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   get _stateObj() {
@@ -2084,19 +2151,20 @@ class AppleHomeClimateCard extends LitElement {
     return onlyIfEntitiesChanged(this, changed, [this._config.entity]);
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   get _stateObj() {
@@ -2104,13 +2172,11 @@ class AppleHomeClimateCard extends LitElement {
   }
 
   _bump(delta) {
-    const s = this._stateObj;
-    const step = s.attributes.target_temp_step || 0.5;
-    const t = s.attributes.temperature;
-    if (t == null) return;
+    const next = nextTargetTemp(this.hass, this._stateObj, delta);
+    if (next == null) return;
     this.hass.callService("climate", "set_temperature", {
       entity_id: this._config.entity,
-      temperature: Math.round((t + delta * step) * 10) / 10,
+      temperature: next,
     });
   }
 
@@ -2252,14 +2318,18 @@ class AppleHomeAreaCard extends LitElement {
     return false;
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
+  }
+
+  updated() {
+    syncBadge(this);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   get _states() {
@@ -3154,7 +3224,9 @@ class AppleHomeGraphCard extends LitElement {
   setConfig(config) {
     if (!config.entity) throw new Error("You must define a sensor entity");
     this._config = { hours: 24, ...config };
-    this._points = undefined;
+    // History is (re)fetched from updated() once hass is available, and only
+    // when the entity or window actually changes, so editing e.g. the name in
+    // the editor doesn't blank the chart.
   }
 
   getCardSize() {
@@ -3171,13 +3243,27 @@ class AppleHomeGraphCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._fetch();
+    // Refresh on re-attach (e.g. switching back to this view), but only if a
+    // first fetch already happened — before that, updated() handles it.
+    if (this._historyKey) this._fetch();
+    window.clearInterval(this._timer);
     this._timer = window.setInterval(() => this._fetch(), 5 * 60 * 1000);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     window.clearInterval(this._timer);
+  }
+
+  updated() {
+    if (!this.hass || !this._config) return;
+    const key = `${this._config.entity}|${this._config.hours || 24}`;
+    if (key === this._historyKey) return;
+    // First time hass is available, or the entity/window changed: fetch now
+    // rather than waiting up to 5 minutes for the next interval tick.
+    this._historyKey = key;
+    this._points = undefined;
+    this._fetch();
   }
 
   get _stateObj() {
@@ -3199,14 +3285,17 @@ class AppleHomeGraphCard extends LitElement {
 
   async _fetch() {
     if (!this.hass || !this._config) return;
+    const key = this._historyKey;
     const end = new Date();
     const start = new Date(end.getTime() - (this._config.hours || 24) * 3600000);
     try {
       const path =
         `history/period/${start.toISOString()}` +
-        `?filter_entity_id=${this._config.entity}` +
+        `?filter_entity_id=${encodeURIComponent(this._config.entity)}` +
         `&minimal_response&significant_changes_only&no_attributes`;
       const res = await this.hass.callApi("GET", path);
+      // Drop a response for an entity/window we've since moved away from.
+      if (key !== this._historyKey) return;
       const series = (res && res[0]) || [];
       this._points = series
         .map((p) => ({
@@ -3215,7 +3304,7 @@ class AppleHomeGraphCard extends LitElement {
         }))
         .filter((p) => !isNaN(p.v) && !isNaN(p.t));
     } catch (e) {
-      this._points = [];
+      if (key === this._historyKey) this._points = [];
     }
   }
 
@@ -4216,6 +4305,7 @@ class AppleHomeVacuumCard extends LitElement {
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
     const s = this._stateObj;
     if (!s) return;
@@ -4234,15 +4324,15 @@ class AppleHomeVacuumCard extends LitElement {
     }
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
     window.clearTimeout(this._pendingTimer);
   }
 
@@ -4612,6 +4702,7 @@ class AppleHomeFanCard extends LitElement {
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
     const s = this._stateObj;
     if (!s) return;
@@ -4624,15 +4715,15 @@ class AppleHomeFanCard extends LitElement {
     this._prevOn = on;
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   getCardSize() {
@@ -5042,6 +5133,7 @@ class AppleHomeCoverCard extends LitElement {
   }
 
   updated(changed) {
+    syncBadge(this);
     if (changed.has("hass") && this._sheet && this.hass) this._sheet.hass = this.hass;
     const s = this._stateObj;
     if (!s) return;
@@ -5068,15 +5160,15 @@ class AppleHomeCoverCard extends LitElement {
     this._prevMoving = moving;
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._sheet && this._sheet.close) this._sheet.close();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
     window.clearTimeout(this._holdTimer);
     window.clearTimeout(this._pendingTimer);
     window.clearTimeout(this._popTimer);
@@ -5136,6 +5228,9 @@ class AppleHomeCoverCard extends LitElement {
 
   // --- Gestures: tap / hold / vertical drag-to-position --------------------
   _onPointerDown(e) {
+    // Primary button / touch / pen only: a right-click shouldn't toggle the
+    // accessory (or start a hold) on its way to the context menu.
+    if (e.button !== 0) return;
     this._pressed = true;
     this._holdFired = false;
     this._dragging = false;
@@ -5165,6 +5260,7 @@ class AppleHomeCoverCard extends LitElement {
   }
 
   _onPointerUp(e) {
+    if (!this._pressed) return; // press was ignored (e.g. right-click) or cancelled
     this._pressed = false;
     window.clearTimeout(this._holdTimer);
     try { this._tileEl && this._tileEl.releasePointerCapture(e.pointerId); } catch (x) {}
@@ -5172,11 +5268,17 @@ class AppleHomeCoverCard extends LitElement {
     if (this._dragging) {
       this._dragging = false;
       if (this._drag != null) {
+        const target = this._drag;
         this.hass.callService("cover", "set_cover_position", {
           entity_id: this._config.entity,
-          position: this._drag,
+          position: target,
         });
         this._haptic("light");
+        // Hold the dragged position on screen until HA reports it (updated()
+        // clears it), so the tile doesn't snap back to the old position first.
+        this._pending = target;
+        window.clearTimeout(this._pendingTimer);
+        this._pendingTimer = window.setTimeout(() => (this._pending = null), 4000);
       }
       this._drag = null;
       return;
@@ -5615,14 +5717,18 @@ class AppleHomeChip extends LitElement {
     return onlyIfEntitiesChanged(this, changed, [this._config.entity], ["_pressed"]);
   }
 
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".icon-badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this, ".icon-badge");
+  }
+
+  updated() {
+    syncBadge(this, ".icon-badge");
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
   }
 
   getCardSize() {
@@ -6510,13 +6616,17 @@ class AppleHomeGroup extends LitElement {
     this._sheet = el;
     requestAnimationFrame(() => el.show());
   }
-  firstUpdated() {
-    this._badge = this.renderRoot.querySelector(".badge");
-    LightField.register(this._badge);
+  connectedCallback() {
+    super.connectedCallback();
+    syncBadge(this);
+  }
+
+  updated() {
+    syncBadge(this);
   }
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._badge) LightField.unregister(this._badge);
+    releaseBadge(this);
     if (this._sheet) this._sheet.close();
   }
   render() {
