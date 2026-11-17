@@ -292,6 +292,96 @@ function nextTargetTemp(hass, stateObj, delta) {
 }
 // Open the Apple Home detail sheet for an entity. Returns the element so the
 // caller can keep feeding it fresh `hass`.
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" &&
+  window.matchMedia &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// A soft light that blooms out from where the tile was tapped. Runs on the
+// compositor via the Web Animations API, so it never re-renders the card.
+function playBloom(tile, bloom, x, y) {
+  if (!tile || !bloom || !bloom.animate || prefersReducedMotion()) return;
+  const r = tile.getBoundingClientRect();
+  const cx = x == null ? r.width / 2 : x;
+  const cy = y == null ? r.height / 2 : y;
+  const size = 2 * Math.hypot(Math.max(cx, r.width - cx), Math.max(cy, r.height - cy));
+  bloom.style.width = bloom.style.height = `${size}px`;
+  bloom.style.left = `${cx - size / 2}px`;
+  bloom.style.top = `${cy - size / 2}px`;
+  bloom.animate(
+    [
+      { transform: "scale(0.05)", opacity: 0.5 },
+      { transform: "scale(1)", opacity: 0 },
+    ],
+    { duration: 620, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
+  );
+}
+
+// Sheet gestures shared by every bottom sheet: drag the grabber or title bar
+// down to dismiss (it follows the finger, rubber-bands upward, and a quick
+// flick also closes), and Escape closes. Call from show(); undo in close().
+function bindSheetGestures(host) {
+  host.updateComplete.then(() => {
+    const root = host.renderRoot;
+    const sheet = root && root.querySelector(".sheet");
+    const backdrop = root && root.querySelector(".backdrop");
+    if (!sheet || !backdrop || host._unbindGestures || host._closing) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") host.close();
+    };
+    window.addEventListener("keydown", onKey);
+    host._unbindGestures = () => window.removeEventListener("keydown", onKey);
+
+    let id = null, startY = 0, lastY = 0, lastT = 0, vel = 0, dy = 0;
+    const down = (e) => {
+      if (e.button !== 0 || e.target.closest("button")) return;
+      id = e.pointerId;
+      startY = lastY = e.clientY;
+      lastT = e.timeStamp;
+      vel = 0;
+      dy = 0;
+      try { e.currentTarget.setPointerCapture(id); } catch (x) {}
+      sheet.style.transition = "none";
+      backdrop.style.transition = "none";
+    };
+    const move = (e) => {
+      if (e.pointerId !== id) return;
+      const raw = e.clientY - startY;
+      dy = raw >= 0 ? raw : -Math.sqrt(-raw) * 2.5; // resist dragging up
+      const dt = e.timeStamp - lastT;
+      if (dt > 0) vel = 0.7 * ((e.clientY - lastY) / dt) + 0.3 * vel;
+      lastY = e.clientY;
+      lastT = e.timeStamp;
+      sheet.style.transform = `translateY(${dy}px)`;
+      const fade = 1 - Math.max(0, dy) / (sheet.offsetHeight || 1);
+      backdrop.style.background = `rgba(0, 0, 0, ${(0.45 * Math.max(0, fade)).toFixed(3)})`;
+    };
+    const up = (e) => {
+      if (e.pointerId !== id) return;
+      id = null;
+      sheet.style.transition = "";
+      backdrop.style.transition = "";
+      sheet.style.transform = "";
+      backdrop.style.background = "";
+      const far = dy > Math.min(140, sheet.offsetHeight * 0.3);
+      const flick = dy > 12 && vel > 0.45;
+      if (far || flick) host.close();
+    };
+    for (const el of root.querySelectorAll(".grabber, .head")) {
+      el.style.touchAction = "none";
+      el.addEventListener("pointerdown", down);
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    }
+  });
+}
+
+function unbindSheetGestures(host) {
+  if (host._unbindGestures) host._unbindGestures();
+  host._unbindGestures = null;
+}
+
 function createSheet(hass, entityId, accent, onClosed, direction) {
   const sheet = document.createElement("apple-home-sheet");
   sheet.hass = hass;
@@ -727,6 +817,12 @@ class AppleHomeCard extends LitElement {
         return;
       case "toggle":
         this._haptic("light");
+        playBloom(
+          this.renderRoot.querySelector(".tile"),
+          this.renderRoot.querySelector(".bloom"),
+          this._tapX,
+          this._tapY
+        );
         this._toggle();
         return;
       case "more-info":
@@ -766,6 +862,9 @@ class AppleHomeCard extends LitElement {
     this._dragging = false;
     this._downY = e.clientY;
     this._tileEl = e.currentTarget;
+    const tr = this._tileEl.getBoundingClientRect();
+    this._tapX = e.clientX - tr.left;
+    this._tapY = e.clientY - tr.top;
     this._levelAtDown = this._isLevelDomain()
       ? (this._dragHeld && this._drag != null ? this._drag : this._level(this._stateObj))
       : null;
@@ -896,6 +995,7 @@ class AppleHomeCard extends LitElement {
       --aha-accent: ${accent};
       --aha-fill-opacity: ${fillOpacity};
       --aha-fill-height: ${fillH}%;
+      --aha-fill-scale: ${fillH / 100};
     `;
 
     const stateText =
@@ -922,11 +1022,13 @@ class AppleHomeCard extends LitElement {
           @keydown=${(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
+              this._tapX = this._tapY = null;
               this._runAction(this._config.tap_action);
             }
           }}
         >
           <div class="fill"></div>
+          <div class="bloom"></div>
           <div class="content">
             <div class="badge">
               <ha-state-icon
@@ -975,43 +1077,6 @@ class AppleHomeCard extends LitElement {
         overflow: visible;
       }
 
-      /* On a very small tile, shrink everything but keep the icon AND both
-         lines of text visible (they ellipsis rather than disappear). */
-      @container ahatile (max-width: 132px) {
-        .content { padding: 11px 12px; gap: 4px; }
-        .badge { width: 32px; height: 32px; --mdc-icon-size: 18px; }
-        .name {
-          font-size: 12px;
-          line-height: 1.14;
-          white-space: normal;
-          display: -webkit-box;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
-        }
-        .state {
-          font-size: 11px;
-          line-height: 1.12;
-          white-space: normal;
-          display: -webkit-box;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
-        }
-      }
-
-      /* Content scales up as the tile gets wider. */
-      @container ahatile (min-width: 175px) {
-        .content { padding: 16px 18px; }
-        .badge { width: 44px; height: 44px; --mdc-icon-size: 24px; }
-        .name { font-size: 17px; }
-        .state { font-size: 14px; }
-      }
-      @container ahatile (min-width: 250px) {
-        .content { padding: 20px 22px; }
-        .badge { width: 54px; height: 54px; --mdc-icon-size: 30px; }
-        .name { font-size: 20px; }
-        .state { font-size: 15px; }
-      }
-
       .tile {
         position: relative;
         height: 100%;
@@ -1026,8 +1091,9 @@ class AppleHomeCard extends LitElement {
         -webkit-tap-highlight-color: transparent;
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08),
           0 8px 24px rgba(0, 0, 0, 0.1);
-        transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2),
-          box-shadow 0.28s ease;
+        /* Release springs back; press-in (below) is quicker. */
+        transition: transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1),
+          box-shadow 0.4s ease;
         outline: none;
         will-change: transform;
       }
@@ -1036,8 +1102,16 @@ class AppleHomeCard extends LitElement {
 
       .tile[data-pressed] {
         transform: scale(0.95);
-        filter: brightness(1.05);
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+        transition-duration: 0.14s;
+        transition-timing-function: cubic-bezier(0.3, 0, 0.5, 1);
+      }
+
+      /* An active tile casts a soft glow in its own colour. */
+      .tile[data-state="on"] {
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08),
+          0 10px 30px -8px color-mix(in srgb, var(--aha-accent) 70%, transparent);
       }
 
       .tile:focus-visible {
@@ -1052,13 +1126,34 @@ class AppleHomeCard extends LitElement {
         left: 0;
         right: 0;
         bottom: 0;
-        top: auto;
-        height: var(--aha-fill-height, 100%);
+        top: 0;
+        /* Full height, scaled from the bottom: animating transform stays on
+           the GPU, where animating height re-lays-out the tile every frame. */
+        transform: scaleY(var(--aha-fill-scale, 1));
+        transform-origin: bottom;
         background: var(--aha-accent);
+        /* A faint lit edge along the top of the fill. */
+        background-image: linear-gradient(
+          rgba(255, 255, 255, 0.22),
+          rgba(255, 255, 255, 0) 14px
+        );
         opacity: var(--aha-fill-opacity, 0);
-        transition: height 0.16s linear, opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+          opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       }
-      .tile[data-dragging] .fill { transition: none; }
+      .tile[data-dragging] .fill { transition: transform 0.06s linear; }
+
+      .bloom {
+        position: absolute;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.55),
+          rgba(255, 255, 255, 0) 65%
+        );
+        opacity: 0;
+        pointer-events: none;
+      }
       .tile[data-dragging] { transform: none !important; }
 
       /* Fan blades spin while running; faster at higher speed. */
@@ -1103,8 +1198,8 @@ class AppleHomeCard extends LitElement {
         100% { transform: scale(1); }
       }
       @keyframes aha-fill-settle {
-        0% { transform: scale(1.06); opacity: 0; }
-        100% { transform: scale(1); opacity: var(--aha-fill-opacity, 1); }
+        0% { scale: 1.06; opacity: 0; }
+        100% { scale: 1; opacity: var(--aha-fill-opacity, 1); }
       }
       @keyframes aha-icon-spin {
         0% { transform: rotate(-12deg) scale(0.9); }
@@ -1189,6 +1284,48 @@ class AppleHomeCard extends LitElement {
         opacity: 0.5;
         cursor: default;
       }
+
+      /* These size rules come last so they override the base sizes above.
+         On a very small tile, shrink everything but keep the icon AND both
+         lines of text visible (they ellipsis rather than disappear). */
+      @container ahatile (max-width: 132px) {
+        .content { padding: 11px 12px; gap: 4px; }
+        .badge { width: 32px; height: 32px; --mdc-icon-size: 18px; }
+        .name {
+          /* A word too long for the tile hyphenates instead of being cut
+             off mid-letter ("Bedroo"). Needs a page lang, which HA sets. */
+          -webkit-hyphens: auto;
+          hyphens: auto;
+          font-size: 12px;
+          line-height: 1.14;
+          white-space: normal;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+        .state {
+          font-size: 11px;
+          line-height: 1.12;
+          white-space: normal;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+      }
+
+      /* Content scales up as the tile gets wider. */
+      @container ahatile (min-width: 175px) {
+        .content { padding: 16px 18px; }
+        .badge { width: 44px; height: 44px; --mdc-icon-size: 24px; }
+        .name { font-size: 17px; }
+        .state { font-size: 14px; }
+      }
+      @container ahatile (min-width: 250px) {
+        .content { padding: 20px 22px; }
+        .badge { width: 54px; height: 54px; --mdc-icon-size: 30px; }
+        .name { font-size: 20px; }
+        .state { font-size: 15px; }
+      }
     `;
   }
 }
@@ -1221,11 +1358,13 @@ class AppleHomeSheet extends LitElement {
 
   show() {
     this._open = true;
+    bindSheetGestures(this);
   }
 
   close() {
     if (this._closing) return;
     this._closing = true;
+    unbindSheetGestures(this);
     this._open = false;
     window.setTimeout(() => {
       this.dispatchEvent(new Event("sheet-closed"));
@@ -1330,7 +1469,7 @@ class AppleHomeSheet extends LitElement {
         @pointerup=${this._onSliderUp}
         @pointercancel=${this._onSliderUp}
       >
-        <div class="fill" style="height:${pct}%"></div>
+        <div class="fill" style="transform:scaleY(${pct / 100})"></div>
         <div class="slider-foot">
           <ha-state-icon
             .hass=${this.hass}
@@ -1738,10 +1877,13 @@ class AppleHomeSheet extends LitElement {
       }
       .sheet.open { transform: translateY(0); }
       .grabber {
+        position: relative;
         width: 38px; height: 5px; border-radius: 3px;
         background: rgba(235, 235, 245, 0.3);
         margin: 6px auto 12px;
+        cursor: grab;
       }
+      .grabber::before { content: ""; position: absolute; inset: -14px -60px; }
       .head {
         display: flex; align-items: center; justify-content: space-between;
         margin-bottom: 18px;
@@ -1768,13 +1910,13 @@ class AppleHomeSheet extends LitElement {
       }
       .big-slider .fill {
         position: absolute;
-        left: 0; right: 0; bottom: 0;
+        inset: 0;
         background: var(--sheet-accent);
-        transition: height 0.1s linear;
+        transform-origin: bottom;
+        transition: transform 0.12s linear;
       }
       .big-slider.dir-down .fill {
-        bottom: auto;
-        top: 0;
+        transform-origin: top;
       }
       .slider-foot {
         position: absolute;
@@ -3596,6 +3738,7 @@ class AppleHomeVacuumSheet extends LitElement {
 
   show() {
     this._open = true;
+    bindSheetGestures(this);
     this._maybeFetchRooms();
   }
 
@@ -3675,6 +3818,7 @@ class AppleHomeVacuumSheet extends LitElement {
   close() {
     if (this._closing) return;
     this._closing = true;
+    unbindSheetGestures(this);
     this._open = false;
     window.setTimeout(() => {
       this.dispatchEvent(new Event("sheet-closed"));
@@ -4059,12 +4203,15 @@ class AppleHomeVacuumSheet extends LitElement {
         }
       }
       .grabber {
+        position: relative;
         width: 38px;
         height: 5px;
         border-radius: 3px;
         background: rgba(235, 235, 245, 0.3);
         margin: 6px auto 12px;
+        cursor: grab;
       }
+      .grabber::before { content: ""; position: absolute; inset: -14px -60px; }
       .head {
         display: flex;
         align-items: center;
@@ -6522,10 +6669,12 @@ class AppleHomeGroupSheet extends LitElement {
   }
   show() {
     this._open = true;
+    bindSheetGestures(this);
   }
   close() {
     if (this._closing) return;
     this._closing = true;
+    unbindSheetGestures(this);
     this._open = false;
     window.setTimeout(() => {
       this.dispatchEvent(new Event("sheet-closed"));
@@ -6576,7 +6725,8 @@ class AppleHomeGroupSheet extends LitElement {
         .sheet { border-radius: 28px; }
       }
       .sheet.open { transform: translateY(0); }
-      .grabber { width: 38px; height: 5px; border-radius: 3px; background: rgba(235,235,245,0.3); margin: 6px auto 12px; }
+      .grabber { position: relative; width: 38px; height: 5px; border-radius: 3px; background: rgba(235,235,245,0.3); margin: 6px auto 12px; cursor: grab; }
+      .grabber::before { content: ""; position: absolute; inset: -14px -60px; }
       .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
       .title { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
       .close { width: 30px; height: 30px; border: none; border-radius: 50%; background: rgba(120,120,128,0.32); color: rgba(235,235,245,0.6); display: grid; place-items: center; cursor: pointer; --mdc-icon-size: 18px; }
