@@ -251,16 +251,44 @@ function callConfiguredAction(hass, action) {
   if (!entityId) return;
   const stateObj = hass.states[entityId];
   if (!stateObj) return;
-  const behavior = DOMAIN_BEHAVIOR[domainOf(entityId)];
-  if (!behavior || !behavior.toggle) return;
-  const spec =
-    typeof behavior.toggle === "function"
-      ? behavior.toggle(stateObj)
-      : behavior.toggle;
+  const spec = toggleServiceFor(stateObj);
+  if (!spec) return;
   hass.callService(spec[0], spec[1], {
     entity_id: entityId,
     ...(action.data || action.service_data || {}),
   });
+}
+
+// [domain, service] that flips an entity, using the same rules as the tile
+// (lock → lock/unlock, button → press, cover → open/close, …). Null when the
+// domain has nothing to toggle.
+function toggleServiceFor(stateObj) {
+  if (!stateObj) return null;
+  const behavior = DOMAIN_BEHAVIOR[domainOf(stateObj.entity_id)];
+  if (!behavior || !behavior.toggle) return null;
+  return typeof behavior.toggle === "function"
+    ? behavior.toggle(stateObj)
+    : behavior.toggle;
+}
+
+// Next climate target for a +/- press: snapped to the entity's step and
+// clamped to its min/max. Null when there is no single target to adjust
+// (e.g. heat_cool ranges, or the unit is off and reports no target).
+function nextTargetTemp(hass, stateObj, delta) {
+  const a = stateObj && stateObj.attributes;
+  if (!a || a.temperature == null) return null;
+  const current = Number(a.temperature);
+  if (!Number.isFinite(current)) return null;
+  const fahrenheit =
+    !!(hass && hass.config && hass.config.unit_system) &&
+    hass.config.unit_system.temperature === "°F";
+  const step = Number(a.target_temp_step) || (fahrenheit ? 1 : 0.5);
+  let next = Math.round((current + delta * step) / step) * step;
+  const min = Number(a.min_temp);
+  const max = Number(a.max_temp);
+  if (a.min_temp != null && Number.isFinite(min)) next = Math.max(min, next);
+  if (a.max_temp != null && Number.isFinite(max)) next = Math.min(max, next);
+  return Math.round(next * 100) / 100;
 }
 // Open the Apple Home detail sheet for an entity. Returns the element so the
 // caller can keep feeding it fresh `hass`.
@@ -1436,18 +1464,22 @@ class AppleHomeSheet extends LitElement {
   _renderClimate(s) {
     const a = s.attributes;
     const target = a.temperature;
-    const step = a.target_temp_step || 0.5;
+    const canAdjust = nextTargetTemp(this.hass, s, 0) != null;
+    const bump = (delta) => {
+      const next = nextTargetTemp(this.hass, s, delta);
+      if (next != null) this._service("climate", "set_temperature", { temperature: next });
+    };
     return html`
       <div class="climate">
         <div class="big-number">
-          <button @click=${() => this._service("climate", "set_temperature", { temperature: target - step })}>
+          <button aria-label="Lower target" ?disabled=${!canAdjust} @click=${() => bump(-1)}>
             <ha-icon icon="mdi:minus"></ha-icon>
           </button>
           <div class="temp-readout">
             <span class="t">${target != null ? `${target}°` : "—"}</span>
             <span class="sub">${a.current_temperature != null ? `Now ${a.current_temperature}°` : ""}</span>
           </div>
-          <button @click=${() => this._service("climate", "set_temperature", { temperature: target + step })}>
+          <button aria-label="Raise target" ?disabled=${!canAdjust} @click=${() => bump(1)}>
             <ha-icon icon="mdi:plus"></ha-icon>
           </button>
         </div>
@@ -1544,11 +1576,9 @@ class AppleHomeSheet extends LitElement {
   }
 
   _renderToggle(s) {
-    const domain = domainOf(s.entity_id);
-    const behavior = DOMAIN_BEHAVIOR[domain];
-    const on = behavior ? behavior.on(s) : s.state === "on";
-    const toggleable = behavior && behavior.toggle;
-    if (!toggleable) {
+    const on = isEntityOn(s);
+    const spec = toggleServiceFor(s);
+    if (!spec) {
       return html`<div class="readout">
         <span class="big-state">${this._capitalize(s.state)}</span>
         ${s.attributes.unit_of_measurement
@@ -1559,10 +1589,19 @@ class AppleHomeSheet extends LitElement {
     return html`
       <button
         class="toggle-big ${on ? "on" : ""}"
-        @click=${() => this._service("homeassistant", on ? "turn_off" : "turn_on")}
+        @click=${() => {
+          // homeassistant.turn_on/off only works for domains that have
+          // turn_on/turn_off services — locks, buttons and scenes don't, so
+          // use the domain's own service for those.
+          if (spec[0] === "homeassistant") {
+            this._service("homeassistant", on ? "turn_off" : "turn_on");
+          } else {
+            this._service(spec[0], spec[1]);
+          }
+        }}
       >
         <ha-state-icon .hass=${this.hass} .stateObj=${s}></ha-state-icon>
-        <span>${on ? "On" : "Off"}</span>
+        <span>${describeEntityState(s, on)}</span>
       </button>
     `;
   }
@@ -1793,6 +1832,7 @@ class AppleHomeSheet extends LitElement {
         background: rgba(120,120,128,0.4); color: #fff; cursor: pointer;
         --mdc-icon-size: 24px; display: grid; place-items: center;
       }
+      .big-number button[disabled] { opacity: 0.4; cursor: default; }
       .temp-readout { text-align: center; display: flex; flex-direction: column; }
       .temp-readout .t { font-size: 40px; font-weight: 600; letter-spacing: -0.02em; }
       .temp-readout .sub { font-size: 13px; color: var(--sheet-sub); }
@@ -2104,13 +2144,11 @@ class AppleHomeClimateCard extends LitElement {
   }
 
   _bump(delta) {
-    const s = this._stateObj;
-    const step = s.attributes.target_temp_step || 0.5;
-    const t = s.attributes.temperature;
-    if (t == null) return;
+    const next = nextTargetTemp(this.hass, this._stateObj, delta);
+    if (next == null) return;
     this.hass.callService("climate", "set_temperature", {
       entity_id: this._config.entity,
-      temperature: Math.round((t + delta * step) * 10) / 10,
+      temperature: next,
     });
   }
 
