@@ -369,6 +369,7 @@ function bindSheetGestures(host) {
     };
     for (const el of root.querySelectorAll(".grabber, .head")) {
       el.style.touchAction = "none";
+      el.style.userSelect = "none";
       el.addEventListener("pointerdown", down);
       el.addEventListener("pointermove", move);
       el.addEventListener("pointerup", up);
