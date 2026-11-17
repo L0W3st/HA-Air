@@ -1312,7 +1312,6 @@ class AppleHomeCard extends LitElement {
           -webkit-line-clamp: 2;
         }
       }
-
       /* Content scales up as the tile gets wider. */
       @container ahatile (min-width: 175px) {
         .content { padding: 16px 18px; }
@@ -2250,6 +2249,8 @@ class AppleHomeMediaCard extends LitElement {
       }
       .tile.on .transport button { color: #fff; }
       .transport button.primary { --mdc-icon-size: 32px; }
+
+      /* Size rules last, so they override the base sizes above. */
       @container ahamedia (max-width: 180px) {
         .content { padding: 12px 13px; gap: 6px; }
         .top { gap: 10px; }
@@ -2410,6 +2411,8 @@ class AppleHomeClimateCard extends LitElement {
       .dial button[disabled] { opacity: 0.4; cursor: default; }
       .target { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; color: var(--primary-text-color); }
       .tile.on .target { color: #1c1c1e; }
+
+      /* Size rules last, so they override the base sizes above. */
       @container ahaclimate (max-width: 180px) {
         .tile { padding: 12px 13px; gap: 8px; }
         .badge, .dial button { width: 30px; height: 30px; --mdc-icon-size: 18px; }
@@ -2569,30 +2572,6 @@ class AppleHomeAreaCard extends LitElement {
       }
       ha-card { background: transparent; border: none; box-shadow: none; height: 100%; }
 
-      @container ahatile (max-width: 132px) {
-        .tile { padding: 12px 13px; gap: 8px; }
-        .badge { width: 32px; height: 32px; --mdc-icon-size: 18px; }
-        .name {
-          font-size: 13px;
-          line-height: 1.12;
-          white-space: normal;
-          display: -webkit-box;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
-        }
-        .sub { font-size: 11px; }
-      }
-
-      @container ahatile (min-width: 175px) {
-        .tile { padding: 16px 18px; }
-        .badge { width: 44px; height: 44px; --mdc-icon-size: 24px; }
-        .name { font-size: 17px; }
-        .sub { font-size: 14px; }
-      }
-      @container ahatile (min-width: 250px) {
-        .badge { width: 54px; height: 54px; --mdc-icon-size: 30px; }
-        .name { font-size: 20px; }
-      }
       .tile {
         position: relative; height: 100%; min-height: 84px; box-sizing: border-box;
         border-radius: 22px; padding: 14px 16px; cursor: pointer;
@@ -2629,6 +2608,31 @@ class AppleHomeAreaCard extends LitElement {
       }
       .sub { font-size: 13px; font-weight: 500; color: var(--secondary-text-color); }
       .tile.on .name, .tile.on .sub { color: #1c1c1e; }
+
+      /* Size rules last, so they override the base sizes above. */
+      @container ahatile (max-width: 132px) {
+        .tile { padding: 12px 13px; gap: 8px; }
+        .badge { width: 32px; height: 32px; --mdc-icon-size: 18px; }
+        .name {
+          font-size: 13px;
+          line-height: 1.12;
+          white-space: normal;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+        .sub { font-size: 11px; }
+      }
+      @container ahatile (min-width: 175px) {
+        .tile { padding: 16px 18px; }
+        .badge { width: 44px; height: 44px; --mdc-icon-size: 24px; }
+        .name { font-size: 17px; }
+        .sub { font-size: 14px; }
+      }
+      @container ahatile (min-width: 250px) {
+        .badge { width: 54px; height: 54px; --mdc-icon-size: 30px; }
+        .name { font-size: 20px; }
+      }
     `;
   }
 }
@@ -3057,7 +3061,6 @@ class AppleHomeWeatherCard extends LitElement {
     );
   }
 
-
   _round(n) {
     return n == null || isNaN(n) ? null : Math.round(n);
   }
@@ -3295,33 +3298,7 @@ class AppleHomeWeatherCard extends LitElement {
       }
       .col .d { font-size: 12px; opacity: 0.85; }
       .col .t { font-size: 13px; font-weight: 600; }
-      @container ahawx (max-width: 210px) {
-        .wx { padding: 12px 14px; gap: 10px; }
-        .now { gap: 10px; }
-        .temp { font-size: 38px; }
-        .name { font-size: 13px; }
-        .cond, .hilo, .col .t { font-size: 11px; }
-        .col .d { font-size: 10px; }
-        .big-ic { --mdc-icon-size: 42px; }
-        .col { min-width: 36px; }
-      }
-      @container ahawx (max-width: 160px) {
-        .wx { padding: 10px 12px; gap: 8px; }
-        .temp { font-size: 30px; }
-        .big-ic { --mdc-icon-size: 32px; }
-        .cond, .hilo, .col .t { font-size: 10px; }
-        .col .d { font-size: 9px; }
-        .col { min-width: 32px; }
-      }
-      @container ahawx (min-width: 280px) {
-        .temp { font-size: 60px; }
-        .name { font-size: 16px; }
-        .cond { font-size: 15px; }
-        .hilo { font-size: 14px; }
-        .big-ic { --mdc-icon-size: 64px; }
-        .strip { gap: 8px; }
-        .col { min-width: 46px; }
-      }
+
       @keyframes aha-wx-pulse {
         0%, 100% { transform: scale(0.94); opacity: 0.72; }
         50% { transform: scale(1.04); opacity: 1; }
@@ -3351,6 +3328,35 @@ class AppleHomeWeatherCard extends LitElement {
       @media (prefers-reduced-motion: reduce) {
         .sky::before,
         .sky::after { animation: none !important; }
+      }
+
+      /* Size rules last, so they override the base sizes above. */
+      @container ahawx (max-width: 210px) {
+        .wx { padding: 12px 14px; gap: 10px; }
+        .now { gap: 10px; }
+        .temp { font-size: 38px; }
+        .name { font-size: 13px; }
+        .cond, .hilo, .col .t { font-size: 11px; }
+        .col .d { font-size: 10px; }
+        .big-ic { --mdc-icon-size: 42px; }
+        .col { min-width: 36px; }
+      }
+      @container ahawx (max-width: 160px) {
+        .wx { padding: 10px 12px; gap: 8px; }
+        .temp { font-size: 30px; }
+        .big-ic { --mdc-icon-size: 32px; }
+        .cond, .hilo, .col .t { font-size: 10px; }
+        .col .d { font-size: 9px; }
+        .col { min-width: 32px; }
+      }
+      @container ahawx (min-width: 280px) {
+        .temp { font-size: 60px; }
+        .name { font-size: 16px; }
+        .cond { font-size: 15px; }
+        .hilo { font-size: 14px; }
+        .big-ic { --mdc-icon-size: 64px; }
+        .strip { gap: 8px; }
+        .col { min-width: 46px; }
       }
     `;
   }
@@ -3685,6 +3691,8 @@ class AppleHomeGraphCard extends LitElement {
         color: var(--secondary-text-color);
         font-size: 13px;
       }
+
+      /* Size rules last, so they override the base sizes above. */
       @container ahagraph (max-width: 180px) {
         .head { flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 13px 4px; }
         .name { font-size: 13px; }
@@ -4807,20 +4815,7 @@ class AppleHomeVacuumCard extends LitElement {
       .tile[data-pop="cleaning"] .badge {
         animation: aha-vacuum-badge-pop 0.58s cubic-bezier(0.22, 0.9, 0.24, 1.16);
       }
-      @container ahavacuum (max-width: 170px) {
-        .content { padding: 14px; }
-        .badge { width: 36px; height: 36px; --mdc-icon-size: 20px; }
-        .name {
-          font-size: 15px;
-          line-height: 1.12;
-          white-space: normal;
-          display: -webkit-box;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
-        }
-        .state { font-size: 12px; line-height: 1.12; }
-        .meta-pill { font-size: 11px; padding: 6px 8px; }
-      }
+
       @keyframes aha-vacuum-sweep {
         0% { transform: translateX(-30%); }
         100% { transform: translateX(30%); }
@@ -4842,6 +4837,22 @@ class AppleHomeVacuumCard extends LitElement {
           transition-duration: 0.01ms !important;
           animation: none !important;
         }
+      }
+
+      /* Size rules last, so they override the base sizes above. */
+      @container ahavacuum (max-width: 170px) {
+        .content { padding: 14px; }
+        .badge { width: 36px; height: 36px; --mdc-icon-size: 20px; }
+        .name {
+          font-size: 15px;
+          line-height: 1.12;
+          white-space: normal;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+        .state { font-size: 12px; line-height: 1.12; }
+        .meta-pill { font-size: 11px; padding: 6px 8px; }
       }
     `;
   }
@@ -5203,21 +5214,7 @@ class AppleHomeFanCard extends LitElement {
       .tile[data-pop="on"] .badge {
         animation: aha-fan-card-pop 0.5s cubic-bezier(0.2, 0.8, 0.3, 1.2);
       }
-      @container ahafan (max-width: 180px) {
-        .content { padding: 14px; }
-        .badge { width: 36px; height: 36px; --mdc-icon-size: 20px; }
-        .name {
-          font-size: 15px;
-          line-height: 1.12;
-          white-space: normal;
-          display: -webkit-box;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
-        }
-        .state { font-size: 12px; line-height: 1.12; }
-        .actions { gap: 8px; grid-template-columns: 36px minmax(0, 1fr) 36px; }
-        .control { min-height: 36px; font-size: 12px; }
-      }
+
       @keyframes aha-fan-card-spin { to { transform: rotate(360deg); } }
       @keyframes aha-fan-card-pop {
         0% { transform: scale(1); }
@@ -5232,6 +5229,23 @@ class AppleHomeFanCard extends LitElement {
           transition-duration: 0.01ms !important;
           animation: none !important;
         }
+      }
+
+      /* Size rules last, so they override the base sizes above. */
+      @container ahafan (max-width: 180px) {
+        .content { padding: 14px; }
+        .badge { width: 36px; height: 36px; --mdc-icon-size: 20px; }
+        .name {
+          font-size: 15px;
+          line-height: 1.12;
+          white-space: normal;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+        .state { font-size: 12px; line-height: 1.12; }
+        .actions { gap: 8px; grid-template-columns: 36px minmax(0, 1fr) 36px; }
+        .control { min-height: 36px; font-size: 12px; }
       }
     `;
   }
@@ -5827,14 +5841,6 @@ class AppleHomeCoverCard extends LitElement {
         animation: aha-cover-pop 0.6s cubic-bezier(0.22, 0.9, 0.24, 1.16);
       }
 
-      @container ahacover (max-width: 170px) {
-        .content { padding: 14px; }
-        .badge { width: 36px; height: 36px; --mdc-icon-size: 20px; }
-        .name { font-size: 15px; line-height: 1.12; }
-        .state { font-size: 12px; }
-        .grip { height: 38px; }
-      }
-
       @keyframes aha-cover-sweep {
         0% { transform: translateY(-60%); opacity: 0; }
         50% { opacity: 1; }
@@ -5853,6 +5859,15 @@ class AppleHomeCoverCard extends LitElement {
           transition-duration: 0.01ms !important;
           animation: none !important;
         }
+      }
+
+      /* Size rules last, so they override the base sizes above. */
+      @container ahacover (max-width: 170px) {
+        .content { padding: 14px; }
+        .badge { width: 36px; height: 36px; --mdc-icon-size: 20px; }
+        .name { font-size: 15px; line-height: 1.12; }
+        .state { font-size: 12px; }
+        .grip { height: 38px; }
       }
     `;
   }
@@ -6089,13 +6104,16 @@ class AppleHomeChip extends LitElement {
       }
       .chip.on .label,
       .chip.on .value { color: #111; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .chip { transition-duration: 0.01ms !important; }
+      }
+
+      /* Size rules last, so they override the base sizes above. */
       @container ahachip (max-width: 170px) {
         .chip { padding: 9px 10px; gap: 8px; }
         .label { font-size: 12px; }
         .value { font-size: 11px; }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .chip { transition-duration: 0.01ms !important; }
       }
     `;
   }
@@ -6448,13 +6466,16 @@ class AppleHomeStatusCard extends LitElement {
       .cell.missing .cell-val {
         color: var(--secondary-text-color);
       }
+
+      @media (prefers-reduced-motion: reduce) {
+        .cell { transition-duration: 0.01ms !important; }
+      }
+
+      /* Size rules last, so they override the base sizes above. */
       @container ahastatus (max-width: 320px) {
         .cell-val { font-size: 16px; }
         .cell-val.numeric { font-size: 20px; }
         .cell-label { font-size: 11px; }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .cell { transition-duration: 0.01ms !important; }
       }
     `;
   }
@@ -6873,6 +6894,8 @@ class AppleHomeGroup extends LitElement {
         -webkit-line-clamp: 2;
       }
       .chev { position: absolute; top: 14px; right: 12px; color: var(--secondary-text-color); --mdc-icon-size: 20px; }
+
+      /* Size rules last, so they override the base sizes above. */
       @container ahatile (max-width: 132px) {
         .tile { min-height: 88px; padding: 13px 14px; gap: 8px; }
         .name {
