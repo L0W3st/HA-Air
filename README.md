@@ -167,11 +167,13 @@ Drop one of these anywhere on a dashboard. It paints a full-screen backdrop behi
 type: custom:apple-home-background
 background: aurora      # aurora · sunset · ocean · midnight · mesh · mono
 selector: true          # show the inline preset picker
+animate: false          # slow background drift (off by default to save battery)
 ```
 
 The backdrop makes HA's own surfaces transparent so the frosted tiles glass over it — pair
-it with the companion theme for the cleanest result. Both the backdrop drift and the tile
-"pop" animations honour `prefers-reduced-motion`.
+it with the companion theme for the cleanest result. The backdrop is still by default:
+`animate: true` brings back the slow drift, at the cost of the phone redrawing every frosted
+tile 60 times a second. Both the drift and the tile animations honour `prefers-reduced-motion`.
 
 ### Options
 

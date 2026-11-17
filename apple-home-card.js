@@ -2740,9 +2740,13 @@ function ensureBackgroundLayer(doc) {
     a.textContent =
       "#aha-bg-layer{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;}" +
       "#aha-bg-layer .aha-bg-gradient{position:absolute;inset:-12%;background-size:cover;" +
-      "animation:aha-bg-drift 44s ease-in-out infinite alternate;}" +
-      "#aha-bg-layer .aha-bg-glass{position:absolute;inset:0;width:100%;height:100%;" +
-      "animation:aha-bg-float 52s ease-in-out infinite alternate;}" +
+      "}" +
+      "#aha-bg-layer .aha-bg-glass{position:absolute;inset:0;width:100%;height:100%;}" +
+      // The slow drift is opt-in (`animate: true`): any movement under the
+      // frosted tiles makes the browser re-blur every one of them 60 times a
+      // second, even when nothing else on screen changes.
+      "#aha-bg-layer.animate .aha-bg-gradient{animation:aha-bg-drift 44s ease-in-out infinite alternate;}" +
+      "#aha-bg-layer.animate .aha-bg-glass{animation:aha-bg-float 52s ease-in-out infinite alternate;}" +
       "@keyframes aha-bg-drift{from{transform:scale(1) translate(0,0)}" +
       "to{transform:scale(1.08) translate(1%,-1.5%)}}" +
       "@keyframes aha-bg-float{from{transform:translate(0,0)}to{transform:translate(-2%,2%)}}" +
@@ -2761,10 +2765,11 @@ function ensureBackgroundLayer(doc) {
   return layer;
 }
 
-function applyBackground(key, doc) {
+function applyBackground(key, doc, animate) {
   const bg = BACKGROUNDS[key] ? key : "aurora";
   const layer = ensureBackgroundLayer(doc);
   if (!layer) return;
+  if (animate !== undefined) layer.classList.toggle("animate", !!animate);
   const grad = layer.querySelector(".aha-bg-gradient");
   if (!grad) return;
   grad.style.background = BACKGROUNDS[bg].css;
@@ -2814,7 +2819,7 @@ class AppleHomeBackground extends LitElement {
   _select(key) {
     const doc = this.ownerDocument || document;
     if (!doc || !doc.head || !doc.body) return;
-    applyBackground(key, doc);
+    applyBackground(key, doc, this._config && this._config.animate);
     this.requestUpdate();
   }
   updated(changed) {
@@ -2826,7 +2831,8 @@ class AppleHomeBackground extends LitElement {
     if (!doc || !doc.head || !doc.body) return;
     applyBackground(
       currentBackgroundKey() || (this._config && this._config.background) || "aurora",
-      doc
+      doc,
+      this._config && this._config.animate
     );
   }
   render() {
